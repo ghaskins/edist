@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.github.ghaskins.edist</groupId>
+  <artifactId>controller-release</artifactId>
+  <version>0.1-SNAPSHOT</version>
+  <packaging>erlang-rel</packaging>
+  
+  <dependencies>
+    <dependency>
+      <groupId>${project.groupId}</groupId>
+      <artifactId>controller-app</artifactId>
+      <version>${project.version}</version>
+      <type>erlang-otp</type>
+      <scope>compile</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+	<groupId>eu.lindenbaum</groupId>
+	<artifactId>maven-erlang-plugin</artifactId>
+	<version>2.0.0-SNAPSHOT</version>
+	<extensions>true</extensions>
+	<configuration>
+	  <skipDialyzer>true</skipDialyzer>
+	</configuration>
+      </plugin>
+    </plugins>
+  </build>
+
+</project> 
