@@ -1,0 +1,15 @@
+;; This buffer is for notes you don't want to save, and for Lisp evaluation.
+;; If you want to create a file, visit that file with C-x C-f,
+;; then enter the text in that file's own buffer.
+
+application:start(sasl).
+application:start(mnesia).
+application:start(controller).
+File = "pom.xml".
+{ok, FileInfo} = file:read_file_info(File).
+Size = lists:nth(2, tuple_to_list(FileInfo)).
+{ok, ODev} = controller:install_release(File, "1.0", Size, []).
+{ok, IDev} = file:open(File, [read, binary]).
+file:copy(IDev, ODev).
+file:close(IDev).
+install_iodevice:close(ODev).

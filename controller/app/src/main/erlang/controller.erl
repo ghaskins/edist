@@ -4,7 +4,9 @@
 -module(controller).
 -behaviour(gen_server).
 
--export([start_link/0]).
+-include_lib("release.hrl").
+
+-export([start_link/0, install_release/4]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -15,7 +17,10 @@
 %% External functions
 %% ====================================================================
 start_link() ->
-    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
+    gen_server:start_link({global, ?MODULE}, ?MODULE, [], []).
+
+install_release(Name, Vsn, Size, []) ->
+    gen_server:call({global, ?MODULE}, {install_release, Name, Vsn, Size}).
 
 %% ====================================================================
 %% Server functions
@@ -30,8 +35,38 @@ start_link() ->
 %%          {stop, Reason}
 %% --------------------------------------------------------------------
 init([]) ->
+    ok = util:open_table(edist_releases,
+    			 [
+    			  {record_name, edist_release},
+    			  {attributes,
+    			   record_info(fields, edist_release)}
+    			 ]),
+    
+    ok = util:open_table(edist_releases_data,
+    			 [
+    			  {record_name, edist_release_data},
+    			  {attributes,
+    			   record_info(fields, edist_release_data)}
+    			 ]),
+    
     {ok, #state{}}.
 
+handle_call({install_release, Name, Vsn, Size}, _From, State) ->
+    Id = Name ++ "-" ++ Vsn,
+    StartFunc = {install_iodevice, start_link, [Name, Vsn, Size]},
+
+    case controller_sup:start_child({list_to_atom(Id),
+				     StartFunc,
+				     transient,
+				     brutal_kill,
+				     worker,
+				     [install_iodevice]}) of
+	{ok, Pid} ->
+	    {reply, {ok, Pid}, State};
+	Error ->
+	    {reply, {error, Error}, State}
+    end;
+		    
 %% --------------------------------------------------------------------
 %% Function: handle_call/3
 %% Description: Handling call messages
@@ -42,7 +77,7 @@ init([]) ->
 %%          {stop, Reason, Reply, State}   | (terminate/2 is called)
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
-handle_call(Request, From, State) ->
+handle_call(_Request, _From, State) ->
     Reply = ok,
     {reply, Reply, State}.
 
@@ -53,7 +88,7 @@ handle_call(Request, From, State) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
-handle_cast(Msg, State) ->
+handle_cast(_Msg, State) ->
     {noreply, State}.
 
 %% --------------------------------------------------------------------
@@ -63,7 +98,7 @@ handle_cast(Msg, State) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
-handle_info(Info, State) ->
+handle_info(_Info, State) ->
     {noreply, State}.
 
 %% --------------------------------------------------------------------
@@ -71,7 +106,7 @@ handle_info(Info, State) ->
 %% Description: Shutdown the server
 %% Returns: any (ignored by gen_server)
 %% --------------------------------------------------------------------
-terminate(Reason, State) ->
+terminate(_Reason, _State) ->
     ok.
 
 %% --------------------------------------------------------------------
@@ -79,10 +114,11 @@ terminate(Reason, State) ->
 %% Purpose: Convert process state when code is changed
 %% Returns: {ok, NewState}
 %% --------------------------------------------------------------------
-code_change(OldVsn, State, Extra) ->
+code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %% --------------------------------------------------------------------
 %%% Internal functions
 %% --------------------------------------------------------------------
 
+    

@@ -16,6 +16,7 @@
 	<configuration>
 	  <otpDependencies>
 	    <code>sasl</code>
+	    <code>mnesia</code>
 	  </otpDependencies>
 	  <skipDialyzer>true</skipDialyzer>
 	</configuration>
