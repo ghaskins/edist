@@ -173,9 +173,10 @@ apply_update({Row, _Col, Data}, State) ->
     end.
 
 flush_buffer(Row, Data, State) ->
-    Record = #edist_release_block{name=State#state.name,
+    Record = #edist_release_block{id=erlang:now(),
+				  name=State#state.name,
 				  vsn=State#state.vsn,
-				  id=Row,
+				  row=Row,
 				  size=size(Data),
 				  data=Data},
     F = fun() ->
