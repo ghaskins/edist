@@ -138,19 +138,23 @@ put_chars(Chars, #state{position = P} = State) ->
     R = P div ?CHARS_PER_REC,
     C = P rem ?CHARS_PER_REC,
     
+    Updates = split_updates(Chars, R, C),
     NewState = lists:foldl(fun(E, Acc) ->
 				   apply_update(E, Acc)
 			   end,
 			   State,
-			   split_updates(Chars, R, C) ),
+			   Updates),
 
     {ok, ok, NewState}.
 
 split_updates([],_,_) ->
     [];
-split_updates(Data, Row, Col) when size(Data) > (?CHARS_PER_REC - Col)->
-    {This,Left} = binary:part(Data, ?CHARS_PER_REC - Col),
-    [ {Row, Col, This} | split_updates(Left, Row + 1, 0) ];
+split_updates(Data, Row, Col) when size(Data) > (?CHARS_PER_REC - Col) ->
+    LeftLen = ?CHARS_PER_REC - Col,
+    RightLen = size(Data) - LeftLen,
+    Left = binary:part(Data, {0, LeftLen}),
+    Right = binary:part(Data, {LeftLen, RightLen}), 
+    [ {Row, Col, Left} | split_updates(Right, Row + 1, 0) ];
 split_updates(Data, Row, Col) ->
     [{Row, Col, Data}].
 
