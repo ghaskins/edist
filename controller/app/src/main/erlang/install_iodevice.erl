@@ -160,4 +160,4 @@ flush_buffer(Row, Data, State) ->
 		mnesia:write(edist_releases_data, Record, write)
 	end,
     {atomic, ok} = mnesia:transaction(F),
-    State.
+    State#state{buffer = <<>>}.
