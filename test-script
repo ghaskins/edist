@@ -5,7 +5,7 @@
 application:start(sasl).
 application:start(mnesia).
 application:start(controller).
-File = "pom.xml".
+File = "target/controller-0.1-SNAPSHOT.tar.gz".
 {ok, ODev} = controller:install_release(File, "1.0", []).
 {ok, IDev} = file:open(File, [read, binary]).
 file:copy(IDev, ODev).
