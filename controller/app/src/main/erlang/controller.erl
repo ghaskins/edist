@@ -6,7 +6,7 @@
 
 -include_lib("release.hrl").
 
--export([start_link/0, install_release/4]).
+-export([start_link/0, install_release/3]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -19,8 +19,8 @@
 start_link() ->
     gen_server:start_link({global, ?MODULE}, ?MODULE, [], []).
 
-install_release(Name, Vsn, Size, []) ->
-    gen_server:call({global, ?MODULE}, {install_release, Name, Vsn, Size}).
+install_release(Name, Vsn, []) ->
+    gen_server:call({global, ?MODULE}, {install_release, Name, Vsn}).
 
 %% ====================================================================
 %% Server functions
@@ -51,9 +51,9 @@ init([]) ->
     
     {ok, #state{}}.
 
-handle_call({install_release, Name, Vsn, Size}, _From, State) ->
+handle_call({install_release, Name, Vsn}, _From, State) ->
     Id = Name ++ "-" ++ Vsn,
-    StartFunc = {install_iodevice, start_link, [Name, Vsn, Size]},
+    StartFunc = {install_iodevice, start_link, [Name, Vsn]},
 
     case controller_sup:start_child({list_to_atom(Id),
 				     StartFunc,

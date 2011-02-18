@@ -6,9 +6,7 @@ application:start(sasl).
 application:start(mnesia).
 application:start(controller).
 File = "pom.xml".
-{ok, FileInfo} = file:read_file_info(File).
-Size = lists:nth(2, tuple_to_list(FileInfo)).
-{ok, ODev} = controller:install_release(File, "1.0", Size, []).
+{ok, ODev} = controller:install_release(File, "1.0", []).
 {ok, IDev} = file:open(File, [read, binary]).
 file:copy(IDev, ODev).
 file:close(IDev).

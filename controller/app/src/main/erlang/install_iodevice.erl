@@ -1,7 +1,7 @@
 -module(install_iodevice).
 -behavior(gen_server).
 
--export([start_link/3, init/1]).
+-export([start_link/2, init/1]).
 -export([handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include_lib("stdlib/include/qlc.hrl").
@@ -9,15 +9,15 @@
 
 -define(CHARS_PER_REC, 4096).
 
--record(state, {name, vsn, size, position=0, buffer}).
+-record(state, {name, vsn, position=0, buffer}).
 
 close(IoDevice) ->
     gen_server:call(IoDevice, close).
 
-start_link(Name, Vsn, Size) ->
-    gen_server:start_link(?MODULE, {Name, Vsn, Size}, []).
+start_link(Name, Vsn) ->
+    gen_server:start_link(?MODULE, {Name, Vsn}, []).
 
-init({Name, Vsn, Size}) ->
+init({Name, Vsn}) ->
     F = fun() ->
 		Record = case mnesia:read(edist_releases, Name, write) of
 			     [] -> #edist_release{name=Name};
@@ -42,7 +42,7 @@ init({Name, Vsn, Size}) ->
 	end,
     {atomic, ok} = mnesia:transaction(F),
 
-    {ok, #state{name=Name, vsn=Vsn, size=Size, buffer= <<>>}}.
+    {ok, #state{name=Name, vsn=Vsn, buffer= <<>>}}.
 
 handle_call(close, _From, #state{buffer=Buffer} = State) when size(Buffer) > 0 ->
     P = State#state.position,
