@@ -42,11 +42,11 @@ init([]) ->
     			   record_info(fields, edist_release)}
     			 ]),
     
-    ok = util:open_table(edist_releases_data,
+    ok = util:open_table(edist_release_blocks,
     			 [
-    			  {record_name, edist_release_data},
+    			  {record_name, edist_release_block},
     			  {attributes,
-    			   record_info(fields, edist_release_data)}
+    			   record_info(fields, edist_release_block)}
     			 ]),
     
     {ok, #state{}}.
