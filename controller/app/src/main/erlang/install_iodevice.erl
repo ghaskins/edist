@@ -4,6 +4,7 @@
 -export([start_link/3, init/1]).
 -export([handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
+-include_lib("stdlib/include/qlc.hrl").
 -include_lib("release.hrl").
 
 -define(CHARS_PER_REC, 4096).
@@ -17,8 +18,31 @@ start_link(Name, Vsn, Size) ->
     gen_server:start_link(?MODULE, {Name, Vsn, Size}, []).
 
 init({Name, Vsn, Size}) ->
-    Buffer = <<>>,
-    {ok, #state{name=Name, vsn=Vsn, size=Size, buffer=Buffer}}.
+    F = fun() ->
+		Record = case mnesia:read(edist_releases, Name, write) of
+			     [] -> #edist_release{name=Name};
+			     [R] -> R
+			 end,
+		case dict:find(Vsn, Record#edist_release.versions) of
+		    {ok, _} -> throw({exists, Name, Vsn});
+		    error -> ok
+		end,
+		
+		Version = #edist_release_vsn{
+		  vsn=Vsn,
+		  block_size=?CHARS_PER_REC,
+		  total_size=initializing,
+		  ref_count=0
+		 },
+		
+		NewVersions = dict:store(Vsn, Version,
+					 Record#edist_release.versions),
+		NewRecord = Record#edist_release{versions=NewVersions},
+		mnesia:write(edist_releases, NewRecord, write)
+	end,
+    {atomic, ok} = mnesia:transaction(F),
+
+    {ok, #state{name=Name, vsn=Vsn, size=Size, buffer= <<>>}}.
 
 handle_call(close, _From, #state{buffer=Buffer} = State) when size(Buffer) > 0 ->
     P = State#state.position,
@@ -41,7 +65,33 @@ handle_info({io_request, From, ReplyAs, Request}, State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-terminate(_Reason, _State) ->
+terminate(normal, _State) ->
+    ok;
+terminate(_Reason, #state{name=Name, vsn=Vsn} = State) ->
+    F = fun() ->
+		Record = case mnesia:read(edist_releases, Name, write) of
+			     [] -> #edist_release{name=Name};
+			     [R] -> R
+			 end,
+		NewVersions = dict:erase(Vsn, Record#edist_release.versions),
+		case dict:size(NewVersions) of
+		    0 ->
+			ok = mnesia:delete_object(edist_releases,
+						  Record, write);
+		    _ ->
+			NewRecord = Record#edist_release{versions=NewVersions},
+			ok = mnesia:write(edist_releases, NewRecord, write)
+		end,
+			
+		Q = qlc:q([mnesia:delete_object(edist_releases_data, R, write)
+			   || R <- mnesia:table(edist_releases_data),
+			      R#edist_release_data.name == Name,
+			      R#edist_release_data.vsn == Vsn
+			  ]),
+		qlc:e(Q),
+		ok
+	end,
+    {atomic, ok} = mnesia:transaction(F),
     ok.
 
 io_request({requests, Reqs}, State) ->
