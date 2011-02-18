@@ -159,18 +159,20 @@ split_updates(Data, Row, Col) ->
     [{Row, Col, Data}].
 
 apply_update({Row, 0, Data}, State) when size(Data) =:= ?CHARS_PER_REC ->
-    flush_buffer(Row, Data, State);
+    flush_buffer(Row, Data, advance_pos(Data, State));
 apply_update({_Row, 0, Data}, State) ->
-    P = State#state.position + size(Data),
-    State#state{buffer=Data, position=P};
+    (advance_pos(Data, State))#state{buffer=Data};
 apply_update({Row, _Col, Data}, State) ->
     Buffer = State#state.buffer ++ Data,
-    P = State#state.position + size(Data),
-    NewState = State#state{buffer=Buffer, position=P},
-    case P rem ?CHARS_PER_REC of
+    NewState = (advance_pos(Data, State))#state{buffer=Buffer},
+    case NewState#state.position rem ?CHARS_PER_REC of
 	0 -> flush_buffer(Row, Buffer, NewState);
 	_ -> NewState
     end.
+
+advance_pos(Data, State) ->
+    P = State#state.position + size(Data),
+    State#state{position=P}.    
 
 flush_buffer(Row, Data, State) ->
     Record = #edist_release_block{id=erlang:now(),
