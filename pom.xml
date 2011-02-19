@@ -8,6 +8,7 @@
 
   <modules>
     <module>controller</module>
+    <module>agent</module>
   </modules>
 
 </project>
