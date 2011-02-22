@@ -4,7 +4,7 @@
 -module(edist_agent_sup).
 -behaviour(supervisor).
 
--export([start_link/0, start_child/1]).
+-export([start_link/1, start_child/1]).
 
 %% --------------------------------------------------------------------
 %% Internal exports
@@ -15,13 +15,13 @@
 
 -define(SERVER, ?MODULE).
 
-start_link() ->
-    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+start_link(Args) ->
+    supervisor:start_link({local, ?MODULE}, ?MODULE, Args).
 
 start_child(ChildSpec) ->
     supervisor:start_child(?MODULE, ChildSpec).
 
-init([]) ->
+init([_App, _Path]) ->
     {ok,{{one_for_all,0,1},
 	 [{'edist-agent',
 	   {edist_agent,start_link,[]},
