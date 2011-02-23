@@ -9,6 +9,7 @@
   <modules>
     <module>controller</module>
     <module>agent</module>
+    <module>lib</module>
   </modules>
 
 </project>

@@ -4,6 +4,7 @@
 -module(controller).
 -behaviour(gen_server).
 
+-include_lib("stdlib/include/qlc.hrl").
 -include_lib("release.hrl").
 
 -export([start_link/0, install_release/3]).
@@ -11,7 +12,11 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
+-record(client, {cookie, pid, ref, app=undefined}).
 -record(state, {}).
+
+api_version() -> 1.
+
 
 %% ====================================================================
 %% External functions
@@ -49,6 +54,13 @@ init([]) ->
     			   record_info(fields, edist_release_block)}
     			 ]),
     
+    mnesia:delete_table(edist_controller_clients),
+    ok = util:open_table(edist_controller_clients,
+    			 [
+    			  {record_name, client},
+    			  {attributes, record_info(fields, client)}
+    			 ]),
+    
     {ok, #state{}}.
 
 handle_call({install_release, Name, Vsn}, _From, State) ->
@@ -65,6 +77,29 @@ handle_call({install_release, Name, Vsn}, _From, State) ->
 	    {reply, {ok, Pid}, State};
 	Error ->
 	    {reply, {error, Error}, State}
+    end;
+
+handle_call({client, negotiate, ApiVsn, Args}, From, State) ->
+    ApiVsn = api_version(),
+    Cookie = erlang:now(),
+    F = fun() ->
+		Ref = erlang:monitor(process, From),
+		Client = #client{cookie=Cookie, pid=From, ref=Ref},
+		mnesia:write(edist_controller_clients, Client, write)
+	end,
+    {atomic, ok} = mnesia:transaction(F),
+    {reply, {ok, ApiVsn, [], Cookie}, State};
+
+handle_call({client, subscribe, Cookie, App}, From, State) ->
+    F = fun() ->
+		[Client] = mnesia:read(edist_controller_clients, Cookie, write),
+		mnesia:write(edist_controller_clients, Client#client{app=App}, write)
+	end,
+    case mnesia:transaction(F) of
+	{atomic, ok} ->
+	    {reply, ok, State};
+	Error ->
+	    {reply, Error, State}
     end;
 		    
 %% --------------------------------------------------------------------
@@ -98,6 +133,19 @@ handle_cast(_Msg, State) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
+handle_info({'DOWN', Ref, process, Pid, _Info}, State) ->
+    Tab = edist_controller_clients,
+    F = fun() ->
+		Q = qlc:q([mnesia:delete_object(Tab, R, write)
+			   || R <- mnesia:table(Tab),
+			      R#client.ref =:= Ref,
+			      R#client.pid =:= Pid
+			  ]),
+		qlc:e(Q),
+		ok
+	end,
+    {atomic, ok} = mnesia:transaction(F),
+    {noreply, State};
 handle_info(_Info, State) ->
     {noreply, State}.
 
