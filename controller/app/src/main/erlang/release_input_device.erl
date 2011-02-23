@@ -1,4 +1,4 @@
--module(install_iodevice).
+-module(release_input_device).
 -behavior(gen_server).
 
 -export([start_link/2, init/1]).

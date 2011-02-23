@@ -65,14 +65,14 @@ init([]) ->
 
 handle_call({install_release, Name, Vsn}, _From, State) ->
     Id = Name ++ "-" ++ Vsn,
-    StartFunc = {install_iodevice, start_link, [Name, Vsn]},
+    StartFunc = {release_input_device, start_link, [Name, Vsn]},
 
     case controller_sup:start_child({list_to_atom(Id),
 				     StartFunc,
 				     transient,
 				     brutal_kill,
 				     worker,
-				     [install_iodevice]}) of
+				     [release_input_device]}) of
 	{ok, Pid} ->
 	    {reply, {ok, Pid}, State};
 	Error ->
