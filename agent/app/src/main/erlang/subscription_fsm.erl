@@ -35,18 +35,24 @@ init([App, Path]) ->
     end.
 
 connecting({controller, connected, Pid}, State) ->
-    {ok, Session} = llconnect(State#state.app, Pid),
-    {ok, Vsn, IDev} = controller_api:open_latest(Session),
     TmpFile = mktemp(),
-    {ok, ODev} = file:open(TmpFile, [write, binary]),
-    {ok, _} = file:copy(IDev, ODev),
-    file:close(ODev),
-    controller_api:close_stream(IDev),
 
-    ok = target_system:install(State#state.app, State#state.path, TmpFile),
-    %ok = file:delete(TmpFile),
+    try
+	{ok, Session} = llconnect(State#state.app, Pid),
+	{ok, Vsn, IDev} = controller_api:open_latest(Session),
+	
+	{ok, ODev} = file:open(TmpFile, [write, binary]),
+	{ok, _} = file:copy(IDev, ODev),
+	file:close(ODev),
+	controller_api:close_stream(IDev),
+	
+	AppName = State#state.app ++ "-" ++ Vsn,
+	ok = target_system:install(AppName, State#state.path, TmpFile),
 
-    {next_state, connected, State#state{pid=Pid, session=Session, vsn=Vsn}}.
+	{next_state, connected, State#state{pid=Pid, session=Session, vsn=Vsn}}
+    after
+	ok = file:delete(TmpFile)
+    end.
 
 reconnecting({controller, connected, Pid}, State) ->
     reconnect(Pid, State).
@@ -69,5 +75,4 @@ terminate(_Reason, State, _Data) ->
     void.
 
 mktemp() ->   
-    %os_cmd:os_cmd("mktemp").
-    "/tmp/foo.tar.gz".
+    os_cmd:os_cmd("mktemp").
