@@ -20,3 +20,15 @@ f(ODev).
 file:copy(IDev, ODev).
 controller:close_stream(IDev).
 file:close(ODev).
+
+---------------------------------
+
+application:start(sasl).
+application:start(agent_link).
+application:start(genevent_bridge).
+application:start(edist_lib).
+application:start(edist_agent).
+
+
+
+

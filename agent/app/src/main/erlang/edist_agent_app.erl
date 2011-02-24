@@ -4,7 +4,10 @@
 
 -export([start/2, stop/1]).
 
-start(_Type, StartArgs) ->
+start(_Type, _StartArgs) ->
+    % FIXME: 
+    StartArgs = [{app, "foo"}, {path, "/tmp/foo-client"}],
+ 
     RequiredArgs = [app, path],
 
     lists:foldl(fun(Arg, _Acc) ->
@@ -18,7 +21,7 @@ start(_Type, StartArgs) ->
     App = proplists:get_value(app, StartArgs),
     Path = proplists:get_value(path, StartArgs),
 
-    edist_agent_sup:start_link(App, Path).
+    edist_agent_sup:start_link([App, Path]).
 
 stop(_State) ->
     ok.

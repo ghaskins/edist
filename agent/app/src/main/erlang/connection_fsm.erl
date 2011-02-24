@@ -1,12 +1,16 @@
 -module(connection_fsm).
 -behavior(gen_fsm).
--export([init/1, start_link/0, handle_info/3, terminate/3]).
+-export([init/1, start_link/0, handle_info/3, handle_sync_event/4, terminate/3]).
 -export([connecting_agent/2, connecting_controller/2, connected/2]).
+-export([get_state/0]).
 
--record(state, {pid, ref}).
+-record(state, {pid, ref, tmo_ref}).
+
+get_state() ->
+    gen_fsm:sync_send_all_state_event(?MODULE, get_state).
 
 start_link() ->
-    gen_fsm:start_link(?MODULE, [], []).
+    gen_fsm:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 init(_Args) ->
     S = self(),
@@ -15,22 +19,30 @@ init(_Args) ->
 					gen_fsm:send_event(S, {agent_link, Event})
 				end,
 				[]),
-    {ok, connecting_agent, #state{}}.
+
+    State = #state{},
+    case agent_link:get_state() of
+	{ok, connected} ->
+	    connect_controller(ok, State);
+	{ok, disconnected} ->
+	    {ok, connecting_agent, State}
+    end.
 
 connecting_agent({agent_link, connected}, State) ->
-    {next_state, connecting_controller, State, 0}.
+    connect_controller(State).
 
-connecting_controller(timeout, State) ->
-    case connect_controller() of
-	not_found ->
-	    {next_state, connecting_controller, State, 1000};
-	{ok, Pid, Ref} ->
-	    gen_fsm:send_event(subscription_fsm, {controller, connected, Pid}),
-	    {next_state, connected, State#state{pid=Pid, ref=Ref}}
-    end;
+connecting_controller({timeout, _, retry_connection}, State) ->
+    connect_controller(State);
+connecting_controller({agent_link, connected}, State) ->
+    % no-op
+    {next_state, connecting_controller, State};
 connecting_controller({agent_link, disconnected}, State) ->
-    {next_state, connecting_agent, State}.
+    gen_fsm:cancel_timer(State#state.tmo_ref),
+    {next_state, connecting_agent, State#state{tmo_ref=undefined}}.
 
+connected({agent_link, connected}, State) ->
+    % no-op
+    {next_state, connected, State};
 connected({agent_link, disconnected}, State) ->
     NewState = disconnect_controller(State),
     {next_state, disconnected, NewState}.
@@ -38,16 +50,27 @@ connected({agent_link, disconnected}, State) ->
 handle_info({'DOWN', Ref, process, _Pid, _Info}, connected, State)
   when Ref =:= State#state.ref ->
     NewState = disconnect_controller(State),
-    {next_state, connecting_controller, NewState, 1000}.
+    connect_controller(NewState).
 
-connect_controller() ->
+connect_controller(State) ->
+    connect_controller(next_state, State).
+
+connect_controller(Tag, State) ->
     case global:whereis_name(controller) of
 	undefined ->
-	    not_found;
+	    TmoRef = gen_fsm:start_timer(1000, retry_connection),
+	    {Tag, connecting_controller, State#state{tmo_ref=TmoRef}};
 	Pid ->
 	    Ref = erlang:monitor(process, Pid),
-	    {ok, Pid, Ref}
+	    gen_fsm:send_event(subscription_fsm, {controller, connected, Pid}),
+	    {Tag, connected, State#state{pid=Pid, ref=Ref}}
     end.
+
+handle_sync_event(get_state, _From, connected, State) ->
+    Pid = State#state.pid,
+    {reply, {ok, connected, Pid}, connected, State};
+handle_sync_event(get_state, _From, StateName, State) ->
+    {reply, {ok, disconnected}, StateName, State}.
 
 disconnect_controller(State) ->
     gen_fsm:send_event(subscription_fsm, {controller, disconnected}),

@@ -27,12 +27,12 @@ init([App, Path]) ->
 	  {'edist-agent',
 	   {edist_agent,start_link,[]},
 	   permanent, 2000, worker,[edist_agent]},
-	  {'edist-connection',
-	   {connection_fsm,start_link,[]},
-	   permanent, 2000, worker,[connection_fsm]},
 	  {'edist-subscription',
 	   {subscription_fsm,start_link,[App, Path]},
-	   permanent, 2000, worker,[subscrition_fsm]}
+	   permanent, 2000, worker,[subscription_fsm]},
+	  {'edist-connection',
+	   {connection_fsm,start_link,[]},
+	   permanent, 2000, worker,[connection_fsm]}
 	 ]
 	}
     }.

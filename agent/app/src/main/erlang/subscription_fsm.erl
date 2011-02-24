@@ -1,14 +1,14 @@
 -module(subscription_fsm).
 -behavior(gen_fsm).
--export([init/1, start_link/1, terminate/3]).
+-export([init/1, start_link/2, terminate/3]).
 -export([connecting/2, reconnecting/2, connected/2]).
 
 -include_lib("kernel/include/file.hrl").
 
--record(state, {app, vsn, path, session}).
+-record(state, {app, vsn, path, pid, session}).
 
-start_link(Args) ->
-    gen_fsm:start_link({local, ?MODULE}, ?MODULE, Args, []).
+start_link(App, Path) ->
+    gen_fsm:start_link({local, ?MODULE}, ?MODULE, [App, Path], []).
 
 init([App, Path]) ->
     case file:read_file_info(Path) of
@@ -35,26 +35,35 @@ init([App, Path]) ->
     end.
 
 connecting({controller, connected, Pid}, State) ->
-    {ok, Session} = connect(State#state.app, Pid),
+    {ok, Session} = llconnect(State#state.app, Pid),
     {ok, Vsn, IDev} = controller_api:open_latest(Session),
     TmpFile = mktemp(),
     {ok, ODev} = file:open(TmpFile, [write, binary]),
     {ok, _} = file:copy(IDev, ODev),
+    file:close(ODev),
+    controller_api:close_stream(IDev),
+
     ok = target_system:install(State#state.app, State#state.path, TmpFile),
     ok = file:delete(TmpFile),
-    {next_state, connected, State#state{session=Session, vsn=Vsn}}.
+
+    {next_state, connected, State#state{pid=Pid, session=Session, vsn=Vsn}}.
 
 reconnecting({controller, connected, Pid}, State) ->
-    {ok, Session} = connect(State#state.app, Pid),
-    {next_state, connected, State#state{session=Session}}.
+    reconnect(Pid, State).
 
 connected({controller, disconnected}, State) ->
-    {next_state, connecting, State}.
+    {next_state, connecting, State#state{pid=undefined, session=undefined}}.
 
-connect(App, Pid) ->
+% low-level connect
+llconnect(App, Pid) ->
     {ok, Session} = controller_api:negotiate(Pid),
     ok = controller_api:subscribe(Session, App),
+    error_logger:info_msg("Connected to controller~n"),
     {ok, Session}.
+
+reconnect(Pid, State) ->
+    {ok, Session} = llconnect(State#state.app, Pid),
+    {next_state, connected, State#state{pid=Pid, session=Session}}.    
 
 terminate(_Reason, State, _Data) ->
     void.
