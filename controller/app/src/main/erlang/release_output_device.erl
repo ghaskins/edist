@@ -78,8 +78,12 @@ get_chars(Count, #state{name=Name, vsn=Vsn, blksize=BlkSize, position=P} = State
     Blocks = split_request(StartRow, StartCol, Count, BlkSize),
 
     F = fun() ->
-		[process_request(Name, Vsn, Row, Col, N, BlkSize)
-		 || {Row, Col, N} <- Blocks]
+		lists:foldl(fun({Row, Col, N}, Current) ->
+				    Next = process_request(Name, Vsn, Row, Col, N, BlkSize),
+				    <<Current/binary, Next/binary>> 
+			    end,
+			    <<>>,
+			    Blocks)
 	end,
     {atomic, Data} = mnesia:transaction(F),
     {ok, Data, State#state{position=P+Count}}.
