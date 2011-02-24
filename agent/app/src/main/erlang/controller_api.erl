@@ -1,5 +1,5 @@
 -module(controller_api).
--export([api_version/0, negotiate/1, subscribe/2]).
+-export([api_version/0, negotiate/1, subscribe/2, open_latest/1, close_stream/1]).
 
 api_version() -> 1.
 
@@ -19,6 +19,6 @@ open_latest(Session) ->
     gen_server:call(Session#session.pid,
 		    {client, open_latest, Session#session.cookie}).
 
-close_device(IoDevice) ->
+close_stream(IoDevice) ->
     gen_server:call(IoDevice, close).
 

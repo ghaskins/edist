@@ -101,6 +101,7 @@ handle_call({read_release, Name, Vsn}, _From, State) ->
     end;
 
 handle_call({client, open_latest, Cookie}, _From, State) ->
+    error_logger:info_msg("Client ~p: OPEN_LATEST~n",[Cookie]),
     
     try
 	{ok, Client} = cookie2client(Cookie),
@@ -132,18 +133,25 @@ handle_call({client, open_latest, Cookie}, _From, State) ->
 	    {reply, {error, Error}, State}
    end;
 
-handle_call({client, negotiate, ApiVsn, Args}, From, State) ->
+handle_call({client, negotiate, ApiVsn, Args}, {Pid,_Tag}, State) ->
     ApiVsn = api_version(),
     Cookie = erlang:now(),
+
+    error_logger:info_msg("Client ~p(~p): NEGOTIATE with Api: ~p Options: ~p~n",
+			   [Cookie, Pid, ApiVsn, Args]),
+    
     F = fun() ->
-		Ref = erlang:monitor(process, From),
-		Client = #client{cookie=Cookie, pid=From, ref=Ref},
+		Ref = erlang:monitor(process, Pid),
+		Client = #client{cookie=Cookie, pid=Pid, ref=Ref},
 		mnesia:write(edist_controller_clients, Client, write)
 	end,
     {atomic, ok} = mnesia:transaction(F),
     {reply, {ok, ApiVsn, [], Cookie}, State};
 
 handle_call({client, subscribe, Cookie, App}, From, State) ->
+    error_logger:info_msg("Client ~p: SUBSCRIBE to app ~s~n",
+			   [Cookie, App]),
+    
     F = fun() ->
 		[Client] = mnesia:read(edist_controller_clients, Cookie, write),
 		mnesia:write(edist_controller_clients, Client#client{app=App}, write)
@@ -187,6 +195,8 @@ handle_cast(_Msg, State) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
 handle_info({'DOWN', Ref, process, Pid, _Info}, State) ->
+    error_logger:info_msg("Client ~p: DOWN~n", [Pid]),
+    
     Tab = edist_controller_clients,
     F = fun() ->
 		Q = qlc:q([mnesia:delete_object(Tab, R, write)

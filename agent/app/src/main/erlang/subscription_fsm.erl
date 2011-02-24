@@ -44,7 +44,7 @@ connecting({controller, connected, Pid}, State) ->
     controller_api:close_stream(IDev),
 
     ok = target_system:install(State#state.app, State#state.path, TmpFile),
-    ok = file:delete(TmpFile),
+    %ok = file:delete(TmpFile),
 
     {next_state, connected, State#state{pid=Pid, session=Session, vsn=Vsn}}.
 
@@ -69,4 +69,5 @@ terminate(_Reason, State, _Data) ->
     void.
 
 mktemp() ->   
-    os_cmd:os_cmd("mktemp").
+    %os_cmd:os_cmd("mktemp").
+    "/tmp/foo.tar.gz".

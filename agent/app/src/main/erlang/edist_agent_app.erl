@@ -6,7 +6,7 @@
 
 start(_Type, _StartArgs) ->
     % FIXME: 
-    StartArgs = [{app, "foo"}, {path, "/tmp/foo-client"}],
+    StartArgs = [{app, "example"}, {path, "/tmp/foo-client"}],
  
     RequiredArgs = [app, path],
 
