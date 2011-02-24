@@ -11,9 +11,6 @@
 
 -record(state, {name, vsn, position=0, buffer}).
 
-close(IoDevice) ->
-    gen_server:call(IoDevice, close).
-
 start_link(Name, Vsn) ->
     gen_server:start_link(?MODULE, {Name, Vsn}, []).
 
@@ -66,20 +63,18 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 terminate(normal, #state{name=Name,vsn=Vsn} = State) ->
-    % increment the reference count
+    % increment the reference count and save the final size
     F = fun() ->
-		[Record] = mnesia:read(edist_releases, Name, write),
-		{ok, Version} = dict:find(Vsn, Record#edist_release.versions),
-		Refs = Version#edist_release_vsn.ref_count,
-		NewVersion = Version#edist_release_vsn{
-			       total_size=State#state.position,
-			       ref_count=Refs+1
-			      },
+		UpdateFun = fun(Version) ->
+				    Refs = Version#edist_release_vsn.ref_count,
+				    Version#edist_release_vsn{
+				      total_size=State#state.position,
+				      ref_count=Refs+1
+				     }
+			    end,
 
-		NewVersions = dict:store(Vsn, NewVersion,
-					 Record#edist_release.versions),
-		NewRecord = Record#edist_release{versions=NewVersions},
-		mnesia:write(edist_releases, NewRecord, write)
+		controller:update_version(Name, Vsn, UpdateFun),
+		ok
 	end,
     {atomic, ok} = mnesia:transaction(F),
     gen_event:notify({global, event_bus}, {release_installed, Name, Vsn}),
@@ -87,27 +82,7 @@ terminate(normal, #state{name=Name,vsn=Vsn} = State) ->
 terminate(_Reason, #state{name=Name, vsn=Vsn} = State) ->
     % issue a compensating transaction to remove all traces of this instance
     F = fun() ->
-		Record = case mnesia:read(edist_releases, Name, write) of
-			     [] -> #edist_release{name=Name};
-			     [R] -> R
-			 end,
-		NewVersions = dict:erase(Vsn, Record#edist_release.versions),
-		case dict:size(NewVersions) of
-		    0 ->
-			ok = mnesia:delete_object(edist_releases,
-						  Record, write);
-		    _ ->
-			NewRecord = Record#edist_release{versions=NewVersions},
-			ok = mnesia:write(edist_releases, NewRecord, write)
-		end,
-			
-		Q = qlc:q([mnesia:delete_object(edist_release_blocks, R, write)
-			   || R <- mnesia:table(edist_release_blocks),
-			      R#edist_release_block.name == Name,
-			      R#edist_release_block.vsn == Vsn
-			  ]),
-		qlc:e(Q),
-		ok
+		controller:rm_version(Name, Vsn)
 	end,
     {atomic, ok} = mnesia:transaction(F),
     ok.

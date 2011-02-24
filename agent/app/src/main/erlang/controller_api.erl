@@ -15,4 +15,10 @@ subscribe(Session, App) ->
     gen_server:call(Session#session.pid,
 		    {client, subscribe, Session#session.cookie, App}).
 
+open_latest(Session) ->
+    gen_server:call(Session#session.pid,
+		    {client, open_latest, Session#session.cookie}).
+
+close_device(IoDevice) ->
+    gen_server:call(IoDevice, close).
 

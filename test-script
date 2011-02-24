@@ -10,4 +10,13 @@ File = "target/controller-0.1-SNAPSHOT.tar.gz".
 {ok, IDev} = file:open(File, [read, binary]).
 file:copy(IDev, ODev).
 file:close(IDev).
-install_iodevice:close(ODev).
+controller:close_stream(ODev).
+
+f(IDev).
+f(ODev).
+
+{ok, IDev} = controller:read_release(File, "1.0").
+{ok, ODev} = file:open("/tmp/foo", [write, binary]).
+file:copy(IDev, ODev).
+controller:close_stream(IDev).
+file:close(ODev).

@@ -7,7 +7,8 @@
 -include_lib("stdlib/include/qlc.hrl").
 -include_lib("release.hrl").
 
--export([start_link/0, install_release/3]).
+-export([start_link/0, install_release/3, read_release/2, close_stream/1]).
+-export([inc_version/2, dec_version/2, rm_version/2, update_version/3]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -26,6 +27,12 @@ start_link() ->
 
 install_release(Name, Vsn, []) ->
     gen_server:call({global, ?MODULE}, {install_release, Name, Vsn}).
+
+read_release(Name, Vsn) ->
+    gen_server:call({global, ?MODULE}, {read_release, Name, Vsn}).
+
+close_stream(IoDevice) ->
+    gen_server:call(IoDevice, close).
 
 %% ====================================================================
 %% Server functions
@@ -64,10 +71,9 @@ init([]) ->
     {ok, #state{}}.
 
 handle_call({install_release, Name, Vsn}, _From, State) ->
-    Id = Name ++ "-" ++ Vsn,
     StartFunc = {release_input_device, start_link, [Name, Vsn]},
 
-    case controller_sup:start_child({list_to_atom(Id),
+    case controller_sup:start_child({erlang:now(),
 				     StartFunc,
 				     transient,
 				     brutal_kill,
@@ -78,6 +84,53 @@ handle_call({install_release, Name, Vsn}, _From, State) ->
 	Error ->
 	    {reply, {error, Error}, State}
     end;
+
+handle_call({read_release, Name, Vsn}, _From, State) ->
+    try
+	F = fun() ->
+		    [Record] = mnesia:read(edist_releases, Name, read),
+		    dict:fetch(Vsn, Record#edist_release.versions)
+			
+	    end,
+	{atomic, Version} = mnesia:transaction(F),
+	{ok, Pid} = open(Name, Version),
+	{reply, {ok, Pid}, State}
+    catch
+	Type:Error ->
+	    {reply, {error, Error}, State}
+    end;
+
+handle_call({client, open_latest, Cookie}, _From, State) ->
+    
+    try
+	{ok, Client} = cookie2client(Cookie),
+	Name = Client#client.app,
+	F = fun() ->
+		    [Record] = mnesia:read(edist_releases, Name, read),
+		    
+		    % find the latest VSN
+		    case dict:fold(fun(Key, _Value, undefined) ->
+					   Key;
+				      (Key, _Value, AccIn) when Key > AccIn ->
+					   Key;
+				      (Key, _Value, AccIn) ->
+					   AccIn
+				   end,
+				   undefined,
+				   Record#edist_release.versions) of
+			undefined ->
+			    throw("No suitable version found");
+			Vsn ->
+			    dict:fetch(Vsn, Record#edist_release.versions)
+		    end
+	    end,
+	{atomic, Version} = mnesia:transaction(F),
+	{ok, Pid} = open(Name, Version),
+	{reply, {ok, Version#edist_release_vsn.vsn, Pid}, State}
+   catch
+	Type:Error ->
+	    {reply, {error, Error}, State}
+   end;
 
 handle_call({client, negotiate, ApiVsn, Args}, From, State) ->
     ApiVsn = api_version(),
@@ -166,7 +219,72 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %% --------------------------------------------------------------------
-%%% Internal functions
+%%% Helper functions
 %% --------------------------------------------------------------------
 
+cookie2client(Cookie) ->
+    F = fun() ->
+		[Client] = mnesia:read(edist_controller_clients, Cookie, read),
+		{ok, Client}
+	end,
+    {atomic, Ret} = mnesia:transaction(F),
+    Ret.
+
+open(Name, Version) ->
+    StartFunc = {release_output_device, start_link, [Name, Version]},
+	    
+    controller_sup:start_child({erlang:now(),
+				StartFunc,
+				transient,
+				brutal_kill,
+				worker,
+				[release_output_device]}).
+     
+inc_version(Name, Vsn) ->
+    update_version(Name, Vsn, fun(Version) ->
+				      Refs = Version#edist_release_vsn.ref_count,
+				      Version#edist_release_vsn{
+					ref_count=Refs+1
+				       }
+			      end).
+   
+dec_version(Name, Vsn) ->
+    update_version(Name, Vsn, fun(Version) ->
+				      Refs = Version#edist_release_vsn.ref_count,
+				      Version#edist_release_vsn{
+					ref_count=Refs-1
+				       }
+			      end).  
+
+update_version(Name, Vsn, Fun) ->
+    [Record] = mnesia:read(edist_releases, Name, write),
+    {ok, Version} = dict:find(Vsn, Record#edist_release.versions),
+    NewVersion = Fun(Version),
+    NewVersions = dict:store(Vsn, NewVersion,
+			     Record#edist_release.versions),
+    NewRecord = Record#edist_release{versions=NewVersions},
+    mnesia:write(edist_releases, NewRecord, write),
+    {ok, NewVersion}.
+
+rm_version(Name, Vsn) ->
+    Record = case mnesia:read(edist_releases, Name, write) of
+		 [] -> #edist_release{name=Name};
+		 [R] -> R
+	     end,
+    NewVersions = dict:erase(Vsn, Record#edist_release.versions),
+    case dict:size(NewVersions) of
+	0 ->
+	    ok = mnesia:delete_object(edist_releases,
+				      Record, write);
+	_ ->
+	    NewRecord = Record#edist_release{versions=NewVersions},
+	    ok = mnesia:write(edist_releases, NewRecord, write)
+    end,
     
+    Q = qlc:q([mnesia:delete_object(edist_release_blocks, R, write)
+	       || R <- mnesia:table(edist_release_blocks),
+		  R#edist_release_block.name == Name,
+		  R#edist_release_block.vsn == Vsn
+	      ]),
+    qlc:e(Q),
+    ok.
