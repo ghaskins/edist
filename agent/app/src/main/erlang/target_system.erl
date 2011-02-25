@@ -9,14 +9,42 @@
 install(App, RootDir, TarFile) ->
     io:fwrite("Extracting ~s ...~n", [TarFile]),
     ok = extract_tar(TarFile, RootDir),
-%    {ok, ErlVsn, RelVsn} = get_ertsvsn(RootDir),
-%    ErtsBinDir = filename:join([RootDir, "erts-" ++ ErlVsn, "bin"]),
-%    BinDir = filename:join([RootDir, "bin"]),
-%    io:fwrite("Substituting in erl.src, start.src and start_erl.src to\n"
-%              "form erl, start and start_erl ...\n"),
-%    subst_src_scripts(["erl", "start", "start_erl"], ErtsBinDir, BinDir, 
-%                      [{"FINAL_ROOTDIR", RootDir}, {"EMU", "beam"}],
-%                      [preserve]),
+    RelFile = filename:join([RootDir, "releases", App ++ ".rel"]),
+    {ok, [{release, {Name, Vsn}, {erts, ErtsVsn}, Apps}]} = file:consult(RelFile),
+
+    ErtsBinDirName = filename:join(["erts-" ++ ErtsVsn, "bin"]),
+    ErtsBinDir = filename:join([RootDir, ErtsBinDirName]),
+    BinDir = filename:join([RootDir, "bin"]),
+
+    case {filelib:is_dir(BinDir), filelib:is_dir(ErtsBinDir)} of
+	{true, true} -> ok;
+	{_, _} ->
+	    % This release did not package up its own ERTS, so lets copy
+	    % our local install after verifying they are compatible
+	    LocalRootDir = code:root_dir(),
+	    {ok, LocalErtsVsn, _} = get_ertsvsn(LocalRootDir),
+	    if
+		LocalErtsVsn =/= ErtsVsn ->
+		    throw("ERTS " ++ ErtsVsn ++
+			      " required, but only " ++
+			      LocalErtsVsn ++ " available");
+		true -> ok
+	    end,
+
+	    lists:foreach(fun(Dir) ->
+				  SrcDir = filename:join([LocalRootDir, Dir]),
+				  DstDir = filename:join([RootDir, Dir]),
+				  copy(SrcDir, DstDir)
+			  end,
+			  [ErtsBinDirName, "bin"]),
+	    ok
+    end,
+
+    io:fwrite("Substituting in erl.src, start.src and start_erl.src to\n"
+              "form erl, start and start_erl ...\n"),
+    subst_src_scripts(["erl", "start", "start_erl"], ErtsBinDir, BinDir, 
+                      [{"FINAL_ROOTDIR", RootDir}, {"EMU", "beam"}],
+                      [preserve]),
     io:fwrite("Creating the RELEASES file ...\n"),
     create_RELEASES(RootDir, 
                     filename:join([RootDir, "releases", App])).
@@ -28,6 +56,16 @@ get_ertsvsn(RootDir) ->
     {ok, StartErlData} = read_txt_file(StartErlDataFile),
     [ErlVsn, RelVsn| _] = string:tokens(StartErlData, " \n"),
     {ok, ErlVsn, RelVsn}.
+
+copy(SrcDir, DstDir) ->
+    F = fun(SrcFile, Acc) ->
+		BaseName = string:substr(SrcFile, length(SrcDir)+2),
+		DstFile = filename:join([DstDir, BaseName]),
+		ok = filelib:ensure_dir(DstFile),
+		copy_file(SrcFile, DstFile, [preserve]),
+		Acc
+	end,
+    ok = filelib:fold_files(SrcDir, ".*", true, F, ok).
 
 %% extract_tar(TarFile, DestDir)
 %%
@@ -92,13 +130,10 @@ subst_var([C| Rest], Vars, Result, VarAcc) ->
 subst_var([], Vars, Result, VarAcc) ->
     subst([], Vars, [VarAcc ++ [$%| Result]]).
 
-copy_file(Src, Dest) ->
-    copy_file(Src, Dest, []).
-
 copy_file(Src, Dest, Opts) ->
     {ok, InFd} = file:open(Src, [raw, binary, read]),
     {ok, OutFd} = file:open(Dest, [raw, binary, write]),
-    do_copy_file(InFd, OutFd),
+    {ok, _} = file:copy(InFd, OutFd),
     file:close(InFd),
     file:close(OutFd),
     case lists:member(preserve, Opts) of
@@ -109,15 +144,6 @@ copy_file(Src, Dest, Opts) ->
             ok
     end.
 
-do_copy_file(InFd, OutFd) ->
-    case file:read(InFd, ?BUFSIZE) of
-        {ok, Bin} ->
-            file:write(OutFd, Bin),
-            do_copy_file(InFd, OutFd);
-        eof  ->
-            ok
-    end.
-       
 write_file(FName, Conts) ->
     {ok, Fd} = file:open(FName, [write]),
     file:write(Fd, Conts),
