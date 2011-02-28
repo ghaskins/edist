@@ -77,6 +77,6 @@ disconnect_controller(State) ->
     true = erlang:demonitor(State#state.ref, [flush]),
     State#state{pid=undefined, ref=undefined}.
 
-terminate(_Reason, State, _Data) ->
+terminate(_Reason, _State, _Data) ->
     genevent_bridge:delete_handler(agent_link_events, self()),
     void.

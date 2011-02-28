@@ -1,5 +1,6 @@
 -module(controller_api).
--export([api_version/0, negotiate/1, subscribe/2, open_latest/1, close_stream/1]).
+-export([api_version/0, negotiate/1, join/2, rejoin/3]).
+-export([download_release/2, close_stream/1]).
 
 api_version() -> 1.
 
@@ -11,13 +12,16 @@ negotiate(Pid) ->
     {ok, ApiVsn, [], Cookie} = gen_server:call(Pid, Request),
     {ok, #session{pid=Pid, cookie=Cookie}}.
 
-subscribe(Session, App) ->
+join(Session, Facts) ->
     gen_server:call(Session#session.pid,
-		    {client, subscribe, Session#session.cookie, App}).
+		    {client, join, Session#session.cookie, Facts}).
 
-open_latest(Session) ->
+rejoin(Session, Facts, App) ->
     gen_server:call(Session#session.pid,
-		    {client, open_latest, Session#session.cookie}).
+		    {client, rejoin, Session#session.cookie, Facts, App}).
+
+download_release(Session, Name) ->
+    gen_server:call(Session#session.pid, {download_release, Name}).
 
 close_stream(IoDevice) ->
     gen_server:call(IoDevice, close).

@@ -5,23 +5,7 @@
 -export([start/2, stop/1]).
 
 start(_Type, _StartArgs) ->
-    % FIXME: 
-    StartArgs = [{app, "example"}, {path, "/tmp/foo-client"}],
- 
-    RequiredArgs = [app, path],
-
-    lists:foldl(fun(Arg, _Acc) ->
-			case proplists:get_value(Arg, StartArgs) of
-			    undefined -> throw({"Missing required arg", Arg});
-			    _ -> ok
-			end
-		end,
-		void, RequiredArgs),
-
-    App = proplists:get_value(app, StartArgs),
-    Path = proplists:get_value(path, StartArgs),
-
-    edist_agent_sup:start_link([App, Path]).
+    edist_agent_sup:start_link([]).
 
 stop(_State) ->
     ok.

@@ -1,7 +1,7 @@
 -module(release_output_device).
 -behavior(gen_server).
 
--export([start_link/2, init/1]).
+-export([start_link/3, init/1]).
 -export([handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include_lib("stdlib/include/qlc.hrl").
@@ -9,10 +9,11 @@
 
 -record(state, {name, vsn, size, blksize, position=0}).
 
-start_link(Name, Version) ->
-    gen_server:start_link(?MODULE, {Name, Version}, []).
+start_link(Name, Version, ClientPid) ->
+    gen_server:start_link(?MODULE, {Name, Version, ClientPid}, []).
 
-init({Name, Version}) ->
+init({Name, Version, ClientPid}) ->
+    erlang:monitor(process, ClientPid),
     #edist_release_vsn{vsn=Vsn, block_size=BlkSize, total_size=Size} = Version,
     F = fun() ->
 		controller:inc_version(Name, Vsn),
@@ -29,6 +30,8 @@ handle_call(_Request, _From, State) ->
 handle_cast(_Request, State) ->
     {noreply, State}.
 
+handle_info({'DOWN', _Ref, process, _Pid, _Info}, State) ->
+    {stop, normal, ok, State};
 handle_info({io_request, From, ReplyAs, Request}, State) ->
     {_Tag, Reply, NewState} = io_request(Request, State),
     From ! {io_reply, ReplyAs, Reply},

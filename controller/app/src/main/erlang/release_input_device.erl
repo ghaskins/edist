@@ -16,10 +16,7 @@ start_link(Name, Vsn) ->
 
 init({Name, Vsn}) ->
     F = fun() ->
-		Record = case mnesia:read(edist_releases, Name, write) of
-			     [] -> #edist_release{name=Name};
-			     [R] -> R
-			 end,
+		[Record] = mnesia:read(edist_releases, Name, write),
 		case dict:find(Vsn, Record#edist_release.versions) of
 		    {ok, _} -> throw({exists, Name, Vsn});
 		    error -> ok

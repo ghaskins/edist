@@ -7,17 +7,18 @@
 -include_lib("stdlib/include/qlc.hrl").
 -include_lib("release.hrl").
 
--export([start_link/0, install_release/3, read_release/2, close_stream/1]).
+-export([start_link/0]).
+-export([create_release/3, upload_release/3, download_release/1]).
+-export([close_stream/1]).
 -export([inc_version/2, dec_version/2, rm_version/2, update_version/3]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--record(client, {cookie, pid, ref, app=undefined}).
+-record(client, {cookie, pid, ref, joined=false, facts, rel}).
 -record(state, {}).
 
 api_version() -> 1.
-
 
 %% ====================================================================
 %% External functions
@@ -25,11 +26,14 @@ api_version() -> 1.
 start_link() ->
     gen_server:start_link({global, ?MODULE}, ?MODULE, [], []).
 
-install_release(Name, Vsn, []) ->
-    gen_server:call({global, ?MODULE}, {install_release, Name, Vsn}).
+create_release(Name, Config, []) ->
+    gen_server:call({global, ?MODULE}, {create_release, Name, Config}).
 
-read_release(Name, Vsn) ->
-    gen_server:call({global, ?MODULE}, {read_release, Name, Vsn}).
+upload_release(Name, Vsn, []) ->
+    gen_server:call({global, ?MODULE}, {upload_release, Name, Vsn}).
+
+download_release(Name) ->
+    gen_server:call({global, ?MODULE}, {download_release, Name}).
 
 close_stream(IoDevice) ->
     gen_server:call(IoDevice, close).
@@ -70,7 +74,21 @@ init([]) ->
     
     {ok, #state{}}.
 
-handle_call({install_release, Name, Vsn}, _From, State) ->
+handle_call({create_release, Name, Config}, _From, State) ->
+    F = fun() ->
+		[] = mnesia:read(edist_releases, Name, write),
+		Record = #edist_release{name=Name, config=Config},
+		mnesia:write(edist_releases, Record, write)
+	end,
+    try mnesia:transaction(F) of
+	{atomic, ok} ->
+	    {reply, ok, State}
+    catch
+	_:Error ->
+	    {reply, {error, Error}, State}
+    end;
+
+handle_call({upload_release, Name, Vsn}, _From, State) ->
     StartFunc = {release_input_device, start_link, [Name, Vsn]},
 
     case controller_sup:start_child({erlang:now(),
@@ -85,53 +103,18 @@ handle_call({install_release, Name, Vsn}, _From, State) ->
 	    {reply, {error, Error}, State}
     end;
 
-handle_call({read_release, Name, Vsn}, _From, State) ->
+handle_call({download_release, Name}, {Pid, _Tag}, State) ->
     try
 	F = fun() ->
-		    [Record] = mnesia:read(edist_releases, Name, read),
-		    dict:fetch(Vsn, Record#edist_release.versions)
-			
+		    find_latest(Name)
 	    end,
 	{atomic, Version} = mnesia:transaction(F),
-	{ok, Pid} = open(Name, Version),
-	{reply, {ok, Pid}, State}
+	{ok, Dev} = open(Name, Version, Pid),
+	{reply, {ok, Version#edist_release_vsn.vsn, Dev}, State}
     catch
 	Type:Error ->
 	    {reply, {error, Error}, State}
     end;
-
-handle_call({client, open_latest, Cookie}, _From, State) ->
-    error_logger:info_msg("Client ~p: OPEN_LATEST~n",[Cookie]),
-    
-    try
-	{ok, Client} = cookie2client(Cookie),
-	Name = Client#client.app,
-	F = fun() ->
-		    [Record] = mnesia:read(edist_releases, Name, read),
-		    
-		    % find the latest VSN
-		    case dict:fold(fun(Key, _Value, undefined) ->
-					   Key;
-				      (Key, _Value, AccIn) when Key > AccIn ->
-					   Key;
-				      (Key, _Value, AccIn) ->
-					   AccIn
-				   end,
-				   undefined,
-				   Record#edist_release.versions) of
-			undefined ->
-			    throw("No suitable version found");
-			Vsn ->
-			    dict:fetch(Vsn, Record#edist_release.versions)
-		    end
-	    end,
-	{atomic, Version} = mnesia:transaction(F),
-	{ok, Pid} = open(Name, Version),
-	{reply, {ok, Version#edist_release_vsn.vsn, Pid}, State}
-   catch
-	Type:Error ->
-	    {reply, {error, Error}, State}
-   end;
 
 handle_call({client, negotiate, ApiVsn, Args}, {Pid,_Tag}, State) ->
     ApiVsn = api_version(),
@@ -148,21 +131,23 @@ handle_call({client, negotiate, ApiVsn, Args}, {Pid,_Tag}, State) ->
     {atomic, ok} = mnesia:transaction(F),
     {reply, {ok, ApiVsn, [], Cookie}, State};
 
-handle_call({client, subscribe, Cookie, App}, From, State) ->
-    error_logger:info_msg("Client ~p: SUBSCRIBE to app ~s~n",
-			   [Cookie, App]),
-    
+handle_call({client, join, Cookie, Facts}, From, State) ->
+    join(Cookie, Facts, undefined, State);
+handle_call({client, rejoin, Cookie, Facts, Rel}, From, State) ->
+    join(Cookie, Facts, Rel,  State);
+
+handle_call({assign, Cookie, Rel}, _From, State) ->
     F = fun() ->
-		[Client] = mnesia:read(edist_controller_clients, Cookie, write),
-		mnesia:write(edist_controller_clients, Client#client{app=App}, write)
+		assign(Cookie, Rel)
 	end,
-    case mnesia:transaction(F) of
+    try mnesia:transaction(F) of
 	{atomic, ok} ->
-	    {reply, ok, State};
-	Error ->
-	    {reply, Error, State}
+	    {reply, ok, State}
+    catch
+	_:Error ->
+	    {reply, {error, Error}, State}
     end;
-		    
+
 %% --------------------------------------------------------------------
 %% Function: handle_call/3
 %% Description: Handling call messages
@@ -199,10 +184,18 @@ handle_info({'DOWN', Ref, process, Pid, _Info}, State) ->
     
     Tab = edist_controller_clients,
     F = fun() ->
-		Q = qlc:q([mnesia:delete_object(Tab, R, write)
-			   || R <- mnesia:table(Tab),
-			      R#client.ref =:= Ref,
-			      R#client.pid =:= Pid
+		DelClient =
+		    fun(Client) ->
+			    gen_event:notify({global, edist_event_bus},
+					     {agent_leave,
+					      Client#client.cookie}),
+			    mnesia:delete_object(Tab, Client, write)
+		    end,
+
+		Q = qlc:q([ DelClient(Client)
+			   || Client <- mnesia:table(Tab),
+			      Client#client.ref =:= Ref,
+			      Client#client.pid =:= Pid
 			  ]),
 		qlc:e(Q),
 		ok
@@ -232,16 +225,84 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Helper functions
 %% --------------------------------------------------------------------
 
-cookie2client(Cookie) ->
-    F = fun() ->
-		[Client] = mnesia:read(edist_controller_clients, Cookie, read),
-		{ok, Client}
-	end,
-    {atomic, Ret} = mnesia:transaction(F),
-    Ret.
+assign(Cookie, Rel) ->
+    [Client] = mnesia:read(edist_controller_clients, Cookie, write),
+    if
+	Client#client.rel =/= undefined ->
+	    throw("Already assigned");
+	true -> ok
+    end,
+    
+    mnesia:write(edist_controller_clients, Client#client{rel=Rel}, write),
+    
+    [#edist_release{config=Config}] = mnesia:read(edist_releases, Rel, read),
+    
+    Client#client.pid ! {assignment, Rel, Config},
+    ok.
+		    
+find_latest(Name) ->
+    [Record] = mnesia:read(edist_releases, Name, read),
+    
+    % find the latest VSN
+    case dict:fold(fun(Key, _Value, undefined) ->
+			   Key;
+		      (Key, _Value, AccIn) when Key > AccIn ->
+			   Key;
+		      (Key, _Value, AccIn) ->
+			   AccIn
+		   end,
+		   undefined,
+		   Record#edist_release.versions) of
+	undefined ->
+	    throw("No suitable version found");
+	Vsn ->
+	    dict:fetch(Vsn, Record#edist_release.versions)
+    end.
 
-open(Name, Version) ->
-    StartFunc = {release_output_device, start_link, [Name, Version]},
+join(Cookie, Facts, Rel, State) ->
+    error_logger:info_msg("Client ~p: JOIN with facts ~p~n",
+			   [Cookie, Facts]),
+    
+    F = fun() ->
+		[Client] = mnesia:read(edist_controller_clients,
+				       Cookie,
+				       write),
+		if
+		    Client#client.joined =:= true ->
+			throw("Already joined");
+		    true -> ok
+		end,
+
+		Vsn = case Rel of
+			  undefined ->
+			      none;
+			  _ ->
+			      #edist_release_vsn{vsn=V} = find_latest(Rel),
+			      V
+		      end,
+
+		UpdatedClient = Client#client{joined=true,
+					      facts=Facts,
+					      rel=Rel}, 
+		mnesia:write(edist_controller_clients, UpdatedClient, write),
+		gen_event:notify({global, edist_event_bus},
+				 {agent_join, Cookie, Facts}),
+		% FIXME
+		assign(Cookie, "example"),
+		{ok, Vsn}
+	end,
+    try mnesia:transaction(F) of
+	{atomic, {ok, none}} ->
+	    {reply, ok, State};
+	{atomic, {ok, Vsn}} ->
+	    {reply, {ok, Vsn}, State}
+    catch
+	Type:Error ->
+	    {reply, Error, State}
+    end.
+
+open(Name, Version, ClientPid) ->
+    StartFunc = {release_output_device, start_link, [Name, Version, ClientPid]},
 	    
     controller_sup:start_child({erlang:now(),
 				StartFunc,
