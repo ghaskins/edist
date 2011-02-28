@@ -5,7 +5,7 @@
 
 -include_lib("kernel/include/file.hrl").
 
--record(state, {rel, vsn, path, facts, config, pid, session}).
+-record(state, {rel, vsn, path, facts, config, cpid, session, rpid}).
 
 start_link() ->
     gen_fsm:start_link({local, ?MODULE}, ?MODULE, [], []).
@@ -22,7 +22,7 @@ connecting({controller, connected, Pid}, State) ->
     {ok, Session} = controller_api:negotiate(Pid),
     ok = controller_api:join(Session, State#state.facts),
  
-    {next_state, assigning, State#state{pid=Pid, session=Session}}.
+    {next_state, assigning, State#state{cpid=Pid, session=Session}}.
     
 assigning({assignment, Rel, Config}, State) ->
     TmpFile = tempfile(),
@@ -35,24 +35,40 @@ assigning({assignment, Rel, Config}, State) ->
 	RelName = relname(Rel, Vsn),
 	ok = target_system:install(RelName, State#state.path, TmpFile),
 
-	{next_state, running, State#state{rel=Rel, vsn=Vsn, config=Config}}
+	Cmd = filename:join([State#state.path, "bin", "erl"]) ++ 
+	    " -noinput" ++
+	    " -sname " ++ Rel ++
+	    Config,
+	
+	error_logger:info_msg("Launching ~s~n", [Cmd]),
+
+	S = self(),
+	Pid = spawn_link(fun() ->
+				 Result = os_cmd:os_cmd(Cmd),
+				 gen_fsm:send_event(S, {release_stopped, Result})
+			 end),
+     
+	{next_state, running,
+	 State#state{rel=Rel, vsn=Vsn, config=Config, rpid=Pid}}
     after
 	ok = file:delete(TmpFile)
     end;
 assigning({controller, disconnected}, State) ->
-    {next_state, connecting, State#state{pid=undefined, session=undefined}}.
+    {next_state, connecting, State#state{cpid=undefined, session=undefined}}.
 
+running({release_stopped, Data}, State) ->
+    {stop, normal, State};
 running({hotupdate, Vsn}, State) ->
     ok;
 running({controller, disconnected}, State) ->
-    {next_state, reconnecting, State#state{pid=undefined, session=undefined}}.
+    {next_state, reconnecting, State#state{cpid=undefined, session=undefined}}.
 
 reconnecting({controller, connected, Pid}, State) ->
     {ok, Session} = controller_api:negotiate(Pid),
     ok = controller_api:rejoin(Session, State#state.facts,
 			       State#state.rel),
 
-    {ok, running, State#state{pid=Pid, session=Session}}.
+    {ok, running, State#state{cpid=Pid, session=Session}}.
 
 handle_info(Info, StateName, State) ->
     gen_fsm:send_event(self(), Info),
@@ -78,8 +94,11 @@ cleanup(State) ->
     target_system:remove_all_files(State#state.path, Files),
     file:del_dir(State#state.path).
 
-tempfile() ->   
-    os_cmd:os_cmd("mktemp").
+os_cmd(Cmd) ->
+    [Tmp | _ ] = string:tokens(os_cmd:os_cmd(Cmd), "\n").
+
+tempfile() -> 
+    os_cmd("mktemp").
 
 tempdir() ->   
-    os_cmd:os_cmd("mktemp -d").
+    os_cmd("mktemp -d").
