@@ -35,10 +35,12 @@ assigning({assignment, Rel, Config}, State) ->
 	RelName = relname(Rel, Vsn),
 	ok = target_system:install(RelName, State#state.path, TmpFile),
 
+	BootFile = filename:join([State#state.path, "releases", Vsn, "start"]),
 	Cmd = filename:join([State#state.path, "bin", "erl"]) ++ 
+	    " -boot " ++ BootFile ++
 	    " -noinput" ++
 	    " -sname " ++ Rel ++
-	    Config,
+	    " " ++ Config,
 	
 	error_logger:info_msg("Launching ~s~n", [Cmd]),
 

@@ -7,7 +7,7 @@ application:start(mnesia).
 application:start(controller).
 net_adm:ping('contact1@linux-mp').
 File = "/home/ghaskins/sandbox/git/edist/example-1.0.1-SNAPSHOT.tar.gz".
-ok = controller:create_release("example", "", []).
+ok = controller:create_release("example", "-yaws embedded true", []).
 {ok, ODev} = controller:upload_release("example", "1.0.1-SNAPSHOT", []).
 {ok, IDev} = file:open(File, [read, binary]).
 file:copy(IDev, ODev).
