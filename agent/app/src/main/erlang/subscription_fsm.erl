@@ -70,7 +70,9 @@ binding({timeout, _, bind}, State) ->
     error_logger:info_msg("Binding to ~p....~n", [State#state.node]), 
     case net_adm:ping(State#state.node) of
 	pong ->
-	    error_logger:info_msg("Binding complete~n", []), 
+	    error_logger:info_msg("Binding complete~n", []),
+	    gen_event:notify({global, edist_event_bus},
+			     {online, State#state.node}),
 	    {next_state, running, State};
 	_ ->
 	    TmoRef = gen_fsm:start_timer(1000, bind),
