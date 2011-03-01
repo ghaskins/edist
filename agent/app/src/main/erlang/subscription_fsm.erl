@@ -1,11 +1,11 @@
 -module(subscription_fsm).
 -behavior(gen_fsm).
 -export([init/1, start_link/0, handle_info/3, terminate/3]).
--export([connecting/2, assigning/2, running/2, reconnecting/2]).
+-export([connecting/2, assigning/2, binding/2, running/2, reconnecting/2]).
 
 -include_lib("kernel/include/file.hrl").
 
--record(state, {rel, vsn, path, facts, config, cpid, session, rpid}).
+-record(state, {rel, vsn, path, facts, config, cpid, session, rpid, tmoref}).
 
 start_link() ->
     gen_fsm:start_link({local, ?MODULE}, ?MODULE, [], []).
@@ -49,14 +49,31 @@ assigning({assignment, Rel, Config}, State) ->
 				 Result = os_cmd:os_cmd(Cmd),
 				 gen_fsm:send_event(S, {release_stopped, Result})
 			 end),
-     
-	{next_state, running,
-	 State#state{rel=Rel, vsn=Vsn, config=Config, rpid=Pid}}
+
+	TmoRef = gen_fsm:start_timer(500, bind),
+	{next_state, binding,
+	 State#state{rel=Rel, vsn=Vsn, config=Config, rpid=Pid, tmoref=TmoRef}}
     after
 	ok = file:delete(TmpFile)
     end;
 assigning({controller, disconnected}, State) ->
     {next_state, connecting, State#state{cpid=undefined, session=undefined}}.
+
+binding({release_stopped, Data}, State) ->
+    gen_fsm:cancel_timer(State#state.tmoref),
+    {stop, normal, State};
+binding({timeout, _, bind}, State) ->
+    [_, Host] = string:tokens(atom_to_list(node()), "@"),
+    Target = list_to_atom(State#state.rel ++ "@" ++ Host),
+    error_logger:info_msg("Binding to ~p....~n", [Target]), 
+    case net_adm:ping(Target) of
+	pong ->
+	    error_logger:info_msg("Binding complete~n", []), 
+	    {next_state, running, State};
+	_ ->
+	    TmoRef = gen_fsm:start_timer(1000, bind),
+	    {next_state, binding, State}
+    end.
 
 running({release_stopped, Data}, State) ->
     {stop, normal, State};
