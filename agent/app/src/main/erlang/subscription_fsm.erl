@@ -5,7 +5,7 @@
 
 -include_lib("kernel/include/file.hrl").
 
--record(state, {rel, vsn, path, facts, config, cpid, session, rpid, tmoref}).
+-record(state, {rel, vsn, path, facts, config, cpid, session, rpid, node, tmoref}).
 
 start_link() ->
     gen_fsm:start_link({local, ?MODULE}, ?MODULE, [], []).
@@ -41,7 +41,10 @@ assigning({assignment, Rel, Config}, State) ->
 	    " -noinput" ++
 	    " -sname " ++ Rel ++
 	    " " ++ Config,
-	
+
+	[_, Host] = string:tokens(atom_to_list(node()), "@"),
+	Target = list_to_atom(Rel ++ "@" ++ Host),
+
 	error_logger:info_msg("Launching ~s~n", [Cmd]),
 
 	S = self(),
@@ -52,7 +55,8 @@ assigning({assignment, Rel, Config}, State) ->
 
 	TmoRef = gen_fsm:start_timer(500, bind),
 	{next_state, binding,
-	 State#state{rel=Rel, vsn=Vsn, config=Config, rpid=Pid, tmoref=TmoRef}}
+	 State#state{rel=Rel, vsn=Vsn, config=Config, rpid=Pid,
+		     node=Target, tmoref=TmoRef}}
     after
 	ok = file:delete(TmpFile)
     end;
@@ -63,10 +67,8 @@ binding({release_stopped, Data}, State) ->
     gen_fsm:cancel_timer(State#state.tmoref),
     {stop, normal, State};
 binding({timeout, _, bind}, State) ->
-    [_, Host] = string:tokens(atom_to_list(node()), "@"),
-    Target = list_to_atom(State#state.rel ++ "@" ++ Host),
-    error_logger:info_msg("Binding to ~p....~n", [Target]), 
-    case net_adm:ping(Target) of
+    error_logger:info_msg("Binding to ~p....~n", [State#state.node]), 
+    case net_adm:ping(State#state.node) of
 	pong ->
 	    error_logger:info_msg("Binding complete~n", []), 
 	    {next_state, running, State};
@@ -93,6 +95,10 @@ handle_info(Info, StateName, State) ->
     gen_fsm:send_event(self(), Info),
     {next_state, StateName, State}.
 
+terminate(Reason, running, State) ->
+    rpc:call(State#state.node, init, stop, []),
+    error_logger:info_msg("Terminate: ~p~n", [Reason]),
+    cleanup(State);
 terminate(Reason, StateName, State) ->
     error_logger:info_msg("Terminate: ~p~n", [Reason]),
     cleanup(State),
