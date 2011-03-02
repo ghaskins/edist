@@ -7,20 +7,24 @@
 -include_lib("stdlib/include/qlc.hrl").
 -include_lib("release.hrl").
 
--record(state, {name, vsn, size, blksize, position=0}).
+-record(state, {name, vsn, elem_id, size, blksize, position=0}).
 
 start_link(Name, Version, ClientPid) ->
     gen_server:start_link(?MODULE, {Name, Version, ClientPid}, []).
 
 init({Name, Version, ClientPid}) ->
     erlang:monitor(process, ClientPid),
-    #edist_release_vsn{vsn=Vsn, block_size=BlkSize, total_size=Size} = Version,
+    % FIXME: just grab the first element
+    #edist_release_vsn{vsn=Vsn, elements=[Element | _]} = Version,
+    #edist_release_elem{elem_id=Id,
+			block_size=BlkSize,
+			total_size=Size} = Element,
     F = fun() ->
 		controller:inc_version(Name, Vsn),
 		ok
 	end,
     {atomic, ok} = mnesia:transaction(F),
-    {ok, #state{name=Name, vsn=Vsn, size=Size, blksize=BlkSize}}.
+    {ok, #state{name=Name, vsn=Vsn, elem_id=Id, size=Size, blksize=BlkSize}}.
 
 handle_call(close, _From, State) ->
     {stop, normal, ok, State};
@@ -40,7 +44,7 @@ handle_info({io_request, From, ReplyAs, Request}, State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-terminate(_Reason, #state{name=Name,vsn=Vsn} = State) ->
+terminate(_Reason, #state{name=Name,vsn=Vsn}) ->
     F = fun() ->
 		Version = controller:dec_version(Name, Vsn),
 		if
@@ -68,13 +72,14 @@ multi_request([_|_], Error) ->
 multi_request([], Result) ->
     Result.
 
-get_chars(Count, #state{size=Size, blksize=BlkSize, position=P} = State)
+get_chars(_Count, #state{size=Size, position=P} = State)
   when P >= Size ->
     {error, eof, State};
-get_chars(Count, #state{size=Size, blksize=BlkSize, position=P} = State)
+get_chars(Count, #state{size=Size, position=P} = State)
   when P+Count > Size ->
     get_chars(Size-P, State);
-get_chars(Count, #state{name=Name, vsn=Vsn, blksize=BlkSize, position=P} = State) ->
+get_chars(Count, State) ->
+    #state{name=Name, vsn=Vsn, elem_id=Id, blksize=BlkSize, position=P} = State,
     StartRow = P div BlkSize,
     StartCol = P rem BlkSize,
     
@@ -82,7 +87,7 @@ get_chars(Count, #state{name=Name, vsn=Vsn, blksize=BlkSize, position=P} = State
 
     F = fun() ->
 		lists:foldl(fun({Row, Col, N}, Current) ->
-				    Next = process_request(Name, Vsn, Row, Col, N, BlkSize),
+				    Next = process_request(Name, Vsn, Id, Row, Col, N, BlkSize),
 				    <<Current/binary, Next/binary>> 
 			    end,
 			    <<>>,
@@ -97,19 +102,20 @@ split_request(Row, Col, Count, BlkSize) when Count > (BlkSize - Col) ->
     Left = BlkSize - Col,
     Right = Count - Left,
     [ {Row, Col, Left} | split_request(Row + 1, 0, Right, BlkSize) ];
-split_request(Row, Col, Count, BlkSize) ->
+split_request(Row, Col, Count, _BlkSize) ->
     [{Row, Col, Count}].
 
-process_request(Name, Vsn, Row, 0, Count, BlkSize) when Count =:= BlkSize ->
-    find_block(Name, Vsn, Row, 0, Count);
-process_request(Name, Vsn, Row, Col, Count, BlkSize) ->
-    Data = find_block(Name, Vsn, Row, Col, Count),
+process_request(Name, Vsn, Id, Row, 0, Count, BlkSize) when Count =:= BlkSize ->
+    find_block(Name, Vsn, Id, Row, 0, Count);
+process_request(Name, Vsn, Id, Row, Col, Count, _BlkSize) ->
+    Data = find_block(Name, Vsn, Id, Row, Col, Count),
     binary:part(Data, {Col, Count}).
 
-find_block(Name, Vsn, Row, Col, Count) ->   
+find_block(Name, Vsn, Id, Row, Col, Count) ->   
     Q = qlc:q([R || R <- mnesia:table(edist_release_blocks),
 		    R#edist_release_block.name =:= Name,
 		    R#edist_release_block.vsn =:= Vsn,
+		    R#edist_release_block.elem_id =:= Id,
 		    R#edist_release_block.row =:= Row
 	      ]),
     [Block] = qlc:e(Q),

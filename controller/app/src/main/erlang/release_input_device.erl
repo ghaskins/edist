@@ -1,7 +1,7 @@
 -module(release_input_device).
 -behavior(gen_server).
 
--export([start_link/2, init/1]).
+-export([start_link/3, init/1]).
 -export([handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include_lib("stdlib/include/qlc.hrl").
@@ -9,34 +9,36 @@
 
 -define(CHARS_PER_REC, 4096).
 
--record(state, {name, vsn, position=0, buffer}).
+-record(state, {name, vsn, elem_id, position=0, buffer}).
 
-start_link(Name, Vsn) ->
-    gen_server:start_link(?MODULE, {Name, Vsn}, []).
+start_link(Name, Vsn, Criteria) ->
+    gen_server:start_link(?MODULE, {Name, Vsn, Criteria}, []).
 
-init({Name, Vsn}) ->
+init({Name, Vsn, Criteria}) ->
+    Id = erlang:now(),
+
     F = fun() ->
 		[Record] = mnesia:read(edist_releases, Name, write),
-		case dict:find(Vsn, Record#edist_release.versions) of
-		    {ok, _} -> throw({exists, Name, Vsn});
-		    error -> ok
-		end,
-		
-		Version = #edist_release_vsn{
-		  vsn=Vsn,
+		{ok, Version} = dict:find(Vsn, Record#edist_release.versions),
+		#edist_release_vsn{state=initializing} = Version,
+
+		Element = #edist_release_elem{
+		  elem_id=Id,
+		  criteria=Criteria,
 		  block_size=?CHARS_PER_REC,
-		  total_size=initializing,
-		  ref_count=0
+		  total_size=initializing
 		 },
-		
-		NewVersions = dict:store(Vsn, Version,
+
+		NewElements = Version#edist_release_vsn.elements ++ [Element],
+		NewVersion = Version#edist_release_vsn{elements=NewElements},
+		NewVersions = dict:store(Vsn, NewVersion,
 					 Record#edist_release.versions),
 		NewRecord = Record#edist_release{versions=NewVersions},
 		mnesia:write(edist_releases, NewRecord, write)
 	end,
     {atomic, ok} = mnesia:transaction(F),
 
-    {ok, #state{name=Name, vsn=Vsn, buffer= <<>>}}.
+    {ok, #state{name=Name, vsn=Vsn, elem_id=Id, buffer= <<>>}}.
 
 handle_call(close, _From, #state{buffer=Buffer} = State) when size(Buffer) > 0 ->
     P = State#state.position,
@@ -59,24 +61,39 @@ handle_info({io_request, From, ReplyAs, Request}, State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-terminate(normal, #state{name=Name,vsn=Vsn} = State) ->
+terminate(normal, #state{name=Name,vsn=Vsn,elem_id=Id} = State) ->
     % increment the reference count and save the final size
-    F = fun() ->
-		UpdateFun = fun(Version) ->
-				    Refs = Version#edist_release_vsn.ref_count,
-				    Version#edist_release_vsn{
-				      total_size=State#state.position,
-				      ref_count=Refs+1
+    UpdateElement = fun(Element) when Element#edist_release_elem.elem_id =:= Id ->
+			    case Element#edist_release_elem.total_size of
+				initializing ->
+				    Element#edist_release_elem{
+				      total_size=State#state.position
 				     }
-			    end,
+			    end;
+		       (Element) -> Element
+		    end,
 
-		controller:update_version(Name, Vsn, UpdateFun),
+    UpdateVersion = fun(Version) ->
+			    Refs = Version#edist_release_vsn.ref_count,
+			    Elements = Version#edist_release_vsn.elements,
+			    
+			    NewElements = [UpdateElement(Element)
+					   || Element <- Elements],
+			    
+			    Version#edist_release_vsn{
+			      ref_count=Refs+1,
+			      elements=NewElements
+			     }
+		    end,
+
+    F = fun() ->
+		controller:update_version(Name, Vsn, UpdateVersion),
 		ok
 	end,
     {atomic, ok} = mnesia:transaction(F),
     gen_event:notify({global, event_bus}, {release_installed, Name, Vsn}),
     ok;
-terminate(_Reason, #state{name=Name, vsn=Vsn} = State) ->
+terminate(_Reason, #state{name=Name, vsn=Vsn} = _State) ->
     % issue a compensating transaction to remove all traces of this instance
     F = fun() ->
 		controller:rm_version(Name, Vsn)
@@ -150,6 +167,7 @@ flush_buffer(Row, Data, State) ->
     Record = #edist_release_block{id=erlang:now(),
 				  name=State#state.name,
 				  vsn=State#state.vsn,
+				  elem_id=State#state.elem_id,
 				  row=Row,
 				  size=size(Data),
 				  data=Data},

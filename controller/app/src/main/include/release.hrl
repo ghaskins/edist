@@ -1,4 +1,5 @@
 
--record(edist_release_vsn, {vsn, block_size, total_size, ref_count}).
+-record(edist_release_elem, {elem_id, criteria, block_size, total_size}).
+-record(edist_release_vsn, {vsn, state=initializing, ref_count=0, elements=[]}).
 -record(edist_release, {name, config, versions=dict:new()}).
--record(edist_release_block, {id, name, vsn, row, size, data}).
+-record(edist_release_block, {id, name, vsn, elem_id, row, size, data}).
