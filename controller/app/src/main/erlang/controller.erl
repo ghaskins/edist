@@ -161,7 +161,7 @@ handle_call({commit_release, Name, Vsn}, _From, State) ->
 handle_call({download_release, Name}, {Pid, _Tag}, State) ->
     try
 	F = fun() ->
-		    find_latest(Name)
+		    find_latest_active(Name)
 	    end,
 	{atomic, Version} = mnesia:transaction(F),
 	{ok, Dev} = open(Name, Version, Pid),
@@ -294,24 +294,46 @@ assign(Cookie, Rel) ->
     
     Client#client.pid ! {assignment, Rel, Config},
     ok.
-		    
+
 find_latest(Name) ->
+    find_latest(Name, nofilter).
+
+find_latest_active(Name) ->
+    Filter = fun(Version) ->
+		     Version#edist_release_vsn.state =:= active
+	     end,
+    find_latest(Name, Filter).
+		    
+find_latest(Name, Filter) ->
     [Record] = mnesia:read(edist_releases, Name, read),
-    
+
+    Versions = [Value ||
+		   {_Key, Value}
+		       <- dict:to_list(Record#edist_release.versions)
+	       ],
+
     % find the latest VSN
-    case dict:fold(fun(Key, _Value, undefined) ->
-			   Key;
-		      (Key, _Value, AccIn) when Key > AccIn ->
-			   Key;
-		      (_Key, _Value, AccIn) ->
-			   AccIn
-		   end,
-		   undefined,
-		   Record#edist_release.versions) of
+    FilteredVersions = case Filter of
+			   nofilter ->
+			       Versions;
+			   _ ->
+			       lists:filter(Filter, Versions)
+		       end,
+    
+    case lists:fold(fun(Version, undefined) ->
+			    Version;
+		       (Version, AccIn)
+			  when Version#edist_release_vsn.vsn >
+			       AccIn#edist_release_vsn.vsn ->
+			    Version;
+		       (_Version, AccIn) ->
+			    AccIn
+		    end,
+		    undefined,
+		    FilteredVersions) of
 	undefined ->
 	    throw("No suitable version found");
-	Vsn ->
-	    dict:fetch(Vsn, Record#edist_release.versions)
+	V -> V
     end.
 
 join(Cookie, Facts, Rel, State) ->
@@ -332,7 +354,7 @@ join(Cookie, Facts, Rel, State) ->
 			  undefined ->
 			      none;
 			  _ ->
-			      #edist_release_vsn{vsn=V} = find_latest(Rel),
+			      #edist_release_vsn{vsn=V} = find_latest_active(Rel),
 			      V
 		      end,
 
