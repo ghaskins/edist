@@ -152,6 +152,8 @@ handle_call({commit_release, Name, Vsn}, _From, State) ->
 					       throw({"bad state", Version})
 				       end
 			       end),
+		gen_event:notify({global, edist_event_bus},
+				 {release_update, Name, Vsn}),
 		ok
 	end,
     try mnesia:transaction(F) of
