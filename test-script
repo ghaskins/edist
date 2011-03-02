@@ -14,6 +14,7 @@ ok = controller:create_release("example", Vsn, "-yaws embedded true", []).
 file:copy(IDev, ODev).
 file:close(IDev).
 controller:close_stream(ODev).
+ok = controller:commit_release("example", Vsn, []).
 
 f(IDev).
 f(ODev).

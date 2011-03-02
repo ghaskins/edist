@@ -8,7 +8,8 @@
 -include_lib("release.hrl").
 
 -export([start_link/0]).
--export([create_release/4, create_update/3, upload_release/4, download_release/1]).
+-export([create_release/4, create_update/3, upload_release/4, commit_release/3]).
+-export([download_release/1]).
 -export([close_stream/1]).
 -export([inc_version/2, dec_version/2, rm_version/2, update_version/3]).
 
@@ -34,6 +35,9 @@ create_update(Name, NextVsn, []) ->
 
 upload_release(Name, Vsn, Criteria, []) ->
     gen_server:call({global, ?MODULE}, {upload_release, Name, Vsn, Criteria}).
+
+commit_release(Name, Vsn, []) ->
+    gen_server:call({global, ?MODULE}, {commit_release, Name, Vsn}).
 
 download_release(Name) ->
     gen_server:call({global, ?MODULE}, {download_release, Name}).
@@ -320,7 +324,7 @@ find_latest(Name, Filter) ->
 			       lists:filter(Filter, Versions)
 		       end,
     
-    case lists:fold(fun(Version, undefined) ->
+    case lists:foldl(fun(Version, undefined) ->
 			    Version;
 		       (Version, AccIn)
 			  when Version#edist_release_vsn.vsn >
