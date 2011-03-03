@@ -2,14 +2,13 @@
   xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.github.ghaskins.edist.demo</groupId>
-  <artifactId>client-group</artifactId>
+  <artifactId>demo</artifactId>
   <version>0.1-SNAPSHOT</version>
   <packaging>pom</packaging>
 
   <modules>
-    <module>app</module>
-    <module>release</module>
-    <module>installer</module>
+    <module>server</module>
+    <module>client</module>
   </modules>
 
 </project>
