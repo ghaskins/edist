@@ -154,6 +154,16 @@ handle_call({commit_release, Name, Vsn}, _From, State) ->
 			       end),
 		gen_event:notify({global, edist_event_bus},
 				 {release_update, Name, Vsn}),
+
+		Q = qlc:q([ Client || 
+			      Client <- mnesia:table(edist_controller_clients),
+			      Client#client.rel =:= Name
+			  ]),
+		lists:foreach(fun(Client) ->
+				      Client#client.pid ! {update, Vsn}	      
+			      end,
+			      qlc:e(Q)),
+
 		ok
 	end,
     try mnesia:transaction(F) of
