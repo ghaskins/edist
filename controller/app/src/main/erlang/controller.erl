@@ -9,7 +9,6 @@
 
 -export([start_link/0]).
 -export([create_release/4, create_update/3, upload_release/4, commit_release/3]).
--export([download_release/1]).
 -export([close_stream/1]).
 -export([inc_version/2, dec_version/2, rm_version/2, update_version/3]).
 
@@ -38,9 +37,6 @@ upload_release(Name, Vsn, Criteria, []) ->
 
 commit_release(Name, Vsn, []) ->
     gen_server:call({global, ?MODULE}, {commit_release, Name, Vsn}).
-
-download_release(Name) ->
-    gen_server:call({global, ?MODULE}, {download_release, Name}).
 
 close_stream(IoDevice) ->
     gen_server:call(IoDevice, close).
@@ -174,19 +170,6 @@ handle_call({commit_release, Name, Vsn}, _From, State) ->
 	    {reply, {error, Error}, State}
     end;
 
-handle_call({download_release, Name}, {Pid, _Tag}, State) ->
-    try
-	F = fun() ->
-		    find_latest_active(Name)
-	    end,
-	{atomic, Version} = mnesia:transaction(F),
-	{ok, Dev} = open(Name, Version, Pid),
-	{reply, {ok, Version#edist_release_vsn.vsn, Dev}, State}
-    catch
-	_:Error ->
-	    {reply, {error, Error}, State}
-    end;
-
 handle_call({client, negotiate, ApiVsn, Args}, {Pid,_Tag}, State) ->
     ApiVsn = api_version(),
     Cookie = erlang:now(),
@@ -206,6 +189,66 @@ handle_call({client, join, Cookie, Facts}, _From, State) ->
     join(Cookie, Facts, undefined, State);
 handle_call({client, rejoin, Cookie, Facts, Rel}, _From, State) ->
     join(Cookie, Facts, Rel,  State);
+
+handle_call({client, download_release, Cookie}, {Pid, _Tag}, State) ->
+    try
+	F = fun() ->
+		    [Client] = mnesia:read(edist_controller_clients,
+					   Cookie,
+					   read),
+		    Version = find_latest_active(Client#client.rel),
+		    {Client, Version}
+	    end,
+	{atomic, {Client, Version}} = mnesia:transaction(F),
+
+	% perform a parallel search for any elements with matching criteria
+	Parent = self(),
+	Work = fun(#edist_release_elem{criteria=Criteria} = Element) ->
+		       case Criteria(Client#client.facts) of
+			   match ->
+			       Parent ! {self(), {match, Element}};
+			   nomatch ->
+			       Parent ! {self(), nomatch}
+		       end
+	       end,
+
+	Pids = [spawn_link(fun() -> Work(Element) end)
+		|| Element <- Version#edist_release_vsn.elements],
+	
+	% grab the first matching reply since the list is in prio order
+	case lists:foldl(fun(Pid, nomatch) ->
+				 receive
+				     {Pid, nomatch} -> nomatch; 
+				     {Pid, {match, Element}} -> Element
+				 end;
+			    (Pid, Element) ->
+				 receive
+				     {Pid, _} -> Element
+				 end
+			 end,
+			 nomatch,
+			 Pids) of
+	    nomatch ->
+		throw("Matching criteria not found");
+	    Element ->
+		StartFunc = {release_output_device, start_link,
+			     [Client#client.rel, Version, Element, Pid]},
+		
+		{ok, Dev} = controller_sup:start_child({erlang:now(),
+							StartFunc,
+							transient,
+							brutal_kill,
+							worker,
+							[release_output_device]
+						       }
+						      ),
+
+		{reply, {ok, Version#edist_release_vsn.vsn, Dev}, State}
+	end
+    catch
+	_:Error ->
+	    {reply, {error, Error}, State}
+    end;
 
 handle_call({assign, Cookie, Rel}, _From, State) ->
     F = fun() ->
@@ -394,16 +437,6 @@ join(Cookie, Facts, Rel, State) ->
 	    {reply, Error, State}
     end.
 
-open(Name, Version, ClientPid) ->
-    StartFunc = {release_output_device, start_link, [Name, Version, ClientPid]},
-	    
-    controller_sup:start_child({erlang:now(),
-				StartFunc,
-				transient,
-				brutal_kill,
-				worker,
-				[release_output_device]}).
-     
 inc_version(Name, Vsn) ->
     update_version(Name, Vsn, fun(Version) ->
 				      Refs = Version#edist_release_vsn.ref_count,

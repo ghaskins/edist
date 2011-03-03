@@ -29,7 +29,7 @@ assigning({assignment, Rel, Config}, State) ->
 
     try
 	{ok, Vsn, IDev} =
-	    controller_api:download_release(State#state.session, Rel),
+	    controller_api:download_release(State#state.session),
 	ok = remote_copy(IDev, TmpFile),
 	
 	RelName = relname(Rel, Vsn),

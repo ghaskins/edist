@@ -1,7 +1,7 @@
 -module(release_output_device).
 -behavior(gen_server).
 
--export([start_link/3, init/1]).
+-export([start_link/4, init/1]).
 -export([handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -include_lib("stdlib/include/qlc.hrl").
@@ -9,13 +9,12 @@
 
 -record(state, {name, vsn, elem_id, size, blksize, position=0}).
 
-start_link(Name, Version, ClientPid) ->
-    gen_server:start_link(?MODULE, {Name, Version, ClientPid}, []).
+start_link(Name, Version, Element, ClientPid) ->
+    gen_server:start_link(?MODULE, {Name, Version, Element, ClientPid}, []).
 
-init({Name, Version, ClientPid}) ->
+init({Name, Version, Element, ClientPid}) ->
     erlang:monitor(process, ClientPid),
-    % FIXME: just grab the first element
-    #edist_release_vsn{vsn=Vsn, elements=[Element | _]} = Version,
+    #edist_release_vsn{vsn=Vsn} = Version,
     #edist_release_elem{elem_id=Id,
 			block_size=BlkSize,
 			total_size=Size} = Element,

@@ -14,8 +14,13 @@
 start_link(Name, Vsn, Criteria) ->
     gen_server:start_link(?MODULE, {Name, Vsn, Criteria}, []).
 
-init({Name, Vsn, Criteria}) ->
+init({Name, Vsn, CriteriaStr}) ->
     Id = erlang:now(),
+
+    % compile the criteria into a fun, or die tryin'
+    {ok, Tokens, _} = erl_scan:string(CriteriaStr),
+    {ok, [Form]} = erl_parse:parse_exprs(Tokens),
+    {value, Criteria, _} = erl_eval:expr(Form, erl_eval:new_bindings()),
 
     F = fun() ->
 		[Record] = mnesia:read(edist_releases, Name, write),
