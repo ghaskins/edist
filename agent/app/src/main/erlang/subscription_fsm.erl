@@ -1,20 +1,20 @@
 -module(subscription_fsm).
 -behavior(gen_fsm).
--export([init/1, start_link/0, handle_info/3, terminate/3]).
+-export([init/1, start_link/1, handle_info/3, terminate/3]).
 -export([connecting/2, assigning/2, binding/2, running/2, reconnecting/2]).
 
 -include_lib("kernel/include/file.hrl").
 
--record(state, {rel, vsn, path, facts, config,
+-record(paths, {runtime}).
+-record(state, {rel, vsn, paths, facts, config,
 		cpid, cname, cnode, session, rpid,
 		tmoref
 	       }).
 
-start_link() ->
-    gen_fsm:start_link({local, ?MODULE}, ?MODULE, [], []).
+start_link(Path) ->
+    gen_fsm:start_link({local, ?MODULE}, ?MODULE, [Path], []).
 
-init(_Args) ->
-    Path = tempdir(),
+init([Path]) ->
     Facts = facter:get_facts(),
 
     [Name, Host] = string:tokens(atom_to_list(node()), "@"),
@@ -30,9 +30,20 @@ init(_Args) ->
 	    void
     end,
 
-    error_logger:info_msg("Starting with facts: ~p~n", [Facts]),
+    RuntimeDir = filename:join([Path, "runtime"]),
 
-    {ok, connecting, #state{path=Path, facts=Facts,
+    case filelib:is_dir(RuntimeDir) of
+	true ->
+	    % make sure we dont have an old runtime hanging around
+	    {ok, Files} = file:list_dir(RuntimeDir), 
+	    target_system:remove_all_files(RuntimeDir, Files);
+	false ->
+	    ok = filelib:ensure_dir(RuntimeDir)
+    end,
+
+    error_logger:info_msg("Starting with facts: ~p~n", [Facts]),
+    Paths = #paths{runtime=RuntimeDir},
+    {ok, connecting, #state{paths=Paths, facts=Facts,
 			    cname=ClientName, cnode=ClientNode}}.
 
 connecting({controller, connected, Pid}, State) ->
@@ -50,10 +61,11 @@ assigning({assignment, Rel, Config}, State) ->
 	ok = remote_copy(IDev, TmpFile),
 	
 	RelName = relname(Rel, Vsn),
-	ok = target_system:install(RelName, State#state.path, TmpFile),
+	RuntimeDir = State#state.paths#paths.runtime,
+	ok = target_system:install(RelName, RuntimeDir, TmpFile),
 
-	BootFile = filename:join([State#state.path, "releases", Vsn, "start"]),
-	Cmd = filename:join([State#state.path, "bin", "erl"]) ++ 
+	BootFile = filename:join([RuntimeDir, "releases", Vsn, "start"]),
+	Cmd = filename:join([RuntimeDir, "bin", "erl"]) ++ 
 	    " -boot " ++ BootFile ++
 	    " -noinput" ++
 	    " -sname " ++ State#state.cname ++
@@ -112,11 +124,9 @@ handle_info(Info, StateName, State) ->
 
 terminate(Reason, running, State) ->
     rpc:call(State#state.cnode, init, stop, []),
-    error_logger:info_msg("Terminate: ~p~n", [Reason]),
-    cleanup(State);
+    error_logger:info_msg("Terminate: ~p~n", [Reason]);
 terminate(Reason, StateName, State) ->
     error_logger:info_msg("Terminate: ~p~n", [Reason]),
-    cleanup(State),
     void.
 
 relname(Rel, Vsn) ->
@@ -127,12 +137,6 @@ remote_copy(IDev, File) ->
     {ok, _} = file:copy(IDev, ODev),
     file:close(ODev),
     controller_api:close_stream(IDev).   
-
-cleanup(State) ->
-    error_logger:info_msg("Cleaning up target~n", []),
-    {ok, Files} = file:list_dir(State#state.path), 
-    target_system:remove_all_files(State#state.path, Files),
-    file:del_dir(State#state.path).
 
 os_cmd(Cmd) ->
     [Tmp | _ ] = string:tokens(os_cmd:os_cmd(Cmd), "\n").
