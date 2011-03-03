@@ -10,7 +10,8 @@ install(App, RootDir, TarFile) ->
     io:fwrite("Extracting ~s ...~n", [TarFile]),
     ok = extract_tar(TarFile, RootDir),
     RelFile = filename:join([RootDir, "releases", App ++ ".rel"]),
-    {ok, [{release, {Name, Vsn}, {erts, ErtsVsn}, Apps}]} = file:consult(RelFile),
+    {ok, [{release, {_Name, _Vsn}, {erts, ErtsVsn}, _Apps}]}
+	= file:consult(RelFile),
 
     ErtsBinDirName = filename:join(["erts-" ++ ErtsVsn, "bin"]),
     ErtsBinDir = filename:join([RootDir, ErtsBinDirName]),

@@ -1,6 +1,7 @@
 -module(subscription_fsm).
 -behavior(gen_fsm).
--export([init/1, start_link/1, handle_info/3, terminate/3]).
+-export([init/1, start_link/1, handle_info/3, handle_event/3,
+	 handle_sync_event/4, code_change/4, terminate/3]).
 -export([connecting/2, assigning/2, binding/2, running/2, reconnecting/2]).
 
 -include_lib("kernel/include/file.hrl").
@@ -88,7 +89,7 @@ assigning({assignment, Rel, Config}, State) ->
 assigning({controller, disconnected}, State) ->
     {next_state, connecting, State#state{cpid=undefined, session=undefined}}.
 
-binding({release_stopped, Data}, State) ->
+binding({release_stopped, _Data}, State) ->
     gen_fsm:cancel_timer(State#state.tmoref),
     {stop, normal, State};
 binding({timeout, _, bind}, State) ->
@@ -101,12 +102,12 @@ binding({timeout, _, bind}, State) ->
 	    {next_state, running, State};
 	_ ->
 	    TmoRef = gen_fsm:start_timer(1000, bind),
-	    {next_state, binding, State}
+	    {next_state, binding, State#state{tmoref=TmoRef}}
     end.
 
-running({release_stopped, Data}, State) ->
+running({release_stopped, _Data}, State) ->
     {stop, normal, State};
-running({hotupdate, Vsn}, State) ->
+running({hotupdate, _Vsn}, _State) ->
     ok;
 running({controller, disconnected}, State) ->
     {next_state, reconnecting, State#state{cpid=undefined, session=undefined}}.
@@ -118,14 +119,23 @@ reconnecting({controller, connected, Pid}, State) ->
 
     {ok, running, State#state{cpid=Pid, session=Session}}.
 
+handle_event(Event, _StateName, _State) ->
+    throw({"Unexpected event", Event}).
+
+handle_sync_event(_Event, _From, StateName, State) ->
+    {reply, {error, einval}, StateName, State}.
+
 handle_info(Info, StateName, State) ->
     gen_fsm:send_event(self(), Info),
     {next_state, StateName, State}.
 
+code_change(_OldVsn, StateName, State, _Extra) ->
+    {ok, StateName, State}.
+
 terminate(Reason, running, State) ->
     rpc:call(State#state.cnode, init, stop, []),
     error_logger:info_msg("Terminate: ~p~n", [Reason]);
-terminate(Reason, StateName, State) ->
+terminate(Reason, _StateName, _State) ->
     error_logger:info_msg("Terminate: ~p~n", [Reason]),
     void.
 
@@ -139,10 +149,9 @@ remote_copy(IDev, File) ->
     controller_api:close_stream(IDev).   
 
 os_cmd(Cmd) ->
-    [Tmp | _ ] = string:tokens(os_cmd:os_cmd(Cmd), "\n").
+    [Tmp | _ ] = string:tokens(os_cmd:os_cmd(Cmd), "\n"),
+    Tmp.
 
 tempfile() -> 
     os_cmd("mktemp").
 
-tempdir() ->   
-    os_cmd("mktemp -d").

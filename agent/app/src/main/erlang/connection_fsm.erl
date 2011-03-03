@@ -1,6 +1,7 @@
 -module(connection_fsm).
 -behavior(gen_fsm).
--export([init/1, start_link/0, handle_info/3, handle_sync_event/4, terminate/3]).
+-export([init/1, start_link/0, handle_info/3, handle_sync_event/4,
+	 handle_event/3, code_change/4, terminate/3]).
 -export([connecting_agent/2, connecting_controller/2, connected/2]).
 -export([get_state/0]).
 
@@ -47,10 +48,16 @@ connected({agent_link, disconnected}, State) ->
     NewState = disconnect_controller(State),
     {next_state, disconnected, NewState}.
 
+handle_event(Event, _StateName, _State) ->
+    throw({"Unexpected event", Event}).
+
 handle_info({'DOWN', Ref, process, _Pid, _Info}, connected, State)
   when Ref =:= State#state.ref ->
     NewState = disconnect_controller(State),
     connect_controller(NewState).
+
+code_change(_OldVsn, StateName, State, _Extra) ->
+    {ok, StateName, State}.
 
 connect_controller(State) ->
     connect_controller(next_state, State).
