@@ -5,18 +5,17 @@
 -export([start/2, stop/1]).
 
 start(_Type, _StartArgs) ->
-    StartArgs = [{path, "/tmp/edist-agent"}],
     RequiredArgs = [path],
 
     lists:foldl(fun(Arg, _Acc) ->
-                       case proplists:get_value(Arg, StartArgs) of
+                       case application:get_env(Arg) of
                            undefined -> throw({"Missing required arg", Arg});
                            _ -> ok
                        end
                end,
                void, RequiredArgs),
 
-    Path = proplists:get_value(path, StartArgs),
+    {ok, Path} = application:get_env(path),
 
     edist_agent_sup:start_link(Path).
 
