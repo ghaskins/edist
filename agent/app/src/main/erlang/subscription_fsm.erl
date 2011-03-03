@@ -5,7 +5,10 @@
 
 -include_lib("kernel/include/file.hrl").
 
--record(state, {rel, vsn, path, facts, config, cpid, session, rpid, node, tmoref}).
+-record(state, {rel, vsn, path, facts, config,
+		cpid, cname, cnode, session, rpid,
+		tmoref
+	       }).
 
 start_link() ->
     gen_fsm:start_link({local, ?MODULE}, ?MODULE, [], []).
@@ -14,9 +17,23 @@ init(_Args) ->
     Path = tempdir(),
     Facts = facter:get_facts(),
 
+    [Name, Host] = string:tokens(atom_to_list(node()), "@"),
+
+    ClientName = Name ++ "-client",
+    ClientNode = list_to_atom(ClientName ++ "@" ++ Host),
+
+    % Ensure that the client is not already running
+    case net_adm:ping(ClientNode) of
+	pong ->
+	    rpc:call(ClientNode, init, stop, []);
+	_ ->
+	    void
+    end,
+
     error_logger:info_msg("Starting with facts: ~p~n", [Facts]),
 
-    {ok, connecting, #state{path=Path, facts=Facts}}.
+    {ok, connecting, #state{path=Path, facts=Facts,
+			    cname=ClientName, cnode=ClientNode}}.
 
 connecting({controller, connected, Pid}, State) ->
     {ok, Session} = controller_api:negotiate(Pid),
@@ -39,11 +56,8 @@ assigning({assignment, Rel, Config}, State) ->
 	Cmd = filename:join([State#state.path, "bin", "erl"]) ++ 
 	    " -boot " ++ BootFile ++
 	    " -noinput" ++
-	    " -sname " ++ Rel ++
+	    " -sname " ++ State#state.cname ++
 	    " " ++ Config,
-
-	[_, Host] = string:tokens(atom_to_list(node()), "@"),
-	Target = list_to_atom(Rel ++ "@" ++ Host),
 
 	error_logger:info_msg("Launching ~s~n", [Cmd]),
 
@@ -55,8 +69,7 @@ assigning({assignment, Rel, Config}, State) ->
 
 	TmoRef = gen_fsm:start_timer(500, bind),
 	{next_state, binding,
-	 State#state{rel=Rel, vsn=Vsn, config=Config, rpid=Pid,
-		     node=Target, tmoref=TmoRef}}
+	 State#state{rel=Rel, vsn=Vsn, config=Config, rpid=Pid, tmoref=TmoRef}}
     after
 	ok = file:delete(TmpFile)
     end;
@@ -67,12 +80,12 @@ binding({release_stopped, Data}, State) ->
     gen_fsm:cancel_timer(State#state.tmoref),
     {stop, normal, State};
 binding({timeout, _, bind}, State) ->
-    error_logger:info_msg("Binding to ~p....~n", [State#state.node]), 
-    case net_adm:ping(State#state.node) of
+    error_logger:info_msg("Binding to ~p....~n", [State#state.cnode]), 
+    case net_adm:ping(State#state.cnode) of
 	pong ->
 	    error_logger:info_msg("Binding complete~n", []),
 	    gen_event:notify({global, edist_event_bus},
-			     {online, State#state.node}),
+			     {online, State#state.cnode}),
 	    {next_state, running, State};
 	_ ->
 	    TmoRef = gen_fsm:start_timer(1000, bind),
@@ -98,7 +111,7 @@ handle_info(Info, StateName, State) ->
     {next_state, StateName, State}.
 
 terminate(Reason, running, State) ->
-    rpc:call(State#state.node, init, stop, []),
+    rpc:call(State#state.cnode, init, stop, []),
     error_logger:info_msg("Terminate: ~p~n", [Reason]),
     cleanup(State);
 terminate(Reason, StateName, State) ->
