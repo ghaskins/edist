@@ -204,7 +204,10 @@ handle_call({client, download_release, Cookie}, {Pid, _Tag}, State) ->
 	% perform a parallel search for any elements with matching criteria
 	Parent = self(),
 	Work = fun(#edist_release_elem{criteria=Criteria} = Element) ->
-		       case Criteria(Client#client.facts) of
+		       % FIXME: We are JIT'ing the criteria, might want to 
+		       % precompile/cache somehow
+		       {ok, Fun} = util:compile_native(Criteria),
+		       case Fun(Client#client.facts) of
 			   match ->
 			       Parent ! {self(), {match, Element}};
 			   nomatch ->
