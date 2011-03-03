@@ -1,0 +1,4 @@
+{release,
+  {${ARTIFACT}, ${VERSION}},
+  {erts, ${ERTS}},
+  ${AUTODEPS}}.
