@@ -16,6 +16,8 @@ atomic_query(Q) ->
     {atomic, Val} = mnesia:transaction(F),
     Val.
 
+compile_native(matchall) ->
+    compile_native("fun(Facts) -> match end.");
 compile_native(ExpStr) ->
     % compile the expression into a fun, or die tryin'
     {ok, Tokens, _} = erl_scan:string(ExpStr),

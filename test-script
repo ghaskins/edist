@@ -9,8 +9,7 @@ net_adm:ping('contact1@linux-mp').
 Vsn = "1.0.1-SNAPSHOT".
 File = "/home/ghaskins/sandbox/git/edist/example-" ++ Vsn ++ ".tar.gz".
 ok = controller:create_release("example", Vsn, "-yaws embedded true", []).
-{ok, ODev} = controller:upload_release("example", "1.0.1-SNAPSHOT",
-"fun(Facts) -> match end.", []).
+{ok, ODev} = controller:upload_release("example", "1.0.1-SNAPSHOT", matchall, []).
 {ok, IDev} = file:open(File, [read, binary]).
 file:copy(IDev, ODev).
 file:close(IDev).
