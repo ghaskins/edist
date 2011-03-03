@@ -190,7 +190,7 @@ handle_call({client, join, Cookie, Facts}, _From, State) ->
 handle_call({client, rejoin, Cookie, Facts, Rel}, _From, State) ->
     join(Cookie, Facts, Rel,  State);
 
-handle_call({client, download_release, Cookie}, {Pid, _Tag}, State) ->
+handle_call({client, download_release, Cookie}, {ClientPid, _Tag}, State) ->
     try
 	F = fun() ->
 		    [Client] = mnesia:read(edist_controller_clients,
@@ -235,7 +235,7 @@ handle_call({client, download_release, Cookie}, {Pid, _Tag}, State) ->
 		throw("Matching criteria not found");
 	    Element ->
 		StartFunc = {release_output_device, start_link,
-			     [Client#client.rel, Version, Element, Pid]},
+			     [Client#client.rel, Version, Element, ClientPid]},
 		
 		{ok, Dev} = controller_sup:start_child({erlang:now(),
 							StartFunc,
