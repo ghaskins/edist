@@ -426,8 +426,6 @@ join(Cookie, Facts, Rel, State) ->
 		mnesia:write(edist_controller_clients, UpdatedClient, write),
 		gen_event:notify({global, edist_event_bus},
 				 {agent_join, Cookie, Facts}),
-		% FIXME
-		assign(Cookie, "example"),
 		{ok, Vsn}
 	end,
     try mnesia:transaction(F) of

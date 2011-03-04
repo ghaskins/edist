@@ -10,6 +10,7 @@
     <module>controller</module>
     <module>agent</module>
     <module>lib</module>
+    <module>demo</module>
   </modules>
 
 </project>

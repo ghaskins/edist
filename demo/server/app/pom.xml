@@ -6,6 +6,15 @@
   <version>0.1-SNAPSHOT</version>
   <packaging>erlang-otp</packaging>
 
+  <dependencies>
+    <dependency>
+      <groupId>com.github.ghaskins.edist</groupId>
+      <artifactId>controller</artifactId>
+      <version>0.1-SNAPSHOT</version>
+      <type>erlang-otp</type>
+    </dependency>
+  </dependencies>
+
   <build>
     <plugins>
       <plugin>
