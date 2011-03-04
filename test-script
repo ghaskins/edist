@@ -3,15 +3,16 @@
 ;; then enter the text in that file's own buffer.
 
 net_adm:ping('contact1@linux-mp').
+Name = "client-release".
 Vsn = "0.1-SNAPSHOT".
-File = "/home/ghaskins/sandbox/git/edist/demo/client/release/target/client-release-0.1-SNAPSHOT.tar.gz".
-ok = controller:create_release("client", Vsn, "-yaws embedded true", []).
-{ok, ODev} = controller:upload_release("client", Vsn, matchall, []).
+File = "/home/ghaskins/sandbox/git/edist/demo/client/release/target/" ++ Name ++ "-" ++ Vsn ++ ".tar.gz".
+ok = controller:create_release(Name, Vsn, "-yaws embedded true", []).
+{ok, ODev} = controller:upload_release(Name, Vsn, matchall, []).
 {ok, IDev} = file:open(File, [read, binary]).
 file:copy(IDev, ODev).
 file:close(IDev).
 controller:close_stream(ODev).
-ok = controller:commit_release("client", Vsn, []).
+ok = controller:commit_release(Name, Vsn, []).
 
 ---------------------------------
 

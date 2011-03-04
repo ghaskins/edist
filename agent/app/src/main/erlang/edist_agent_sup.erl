@@ -21,14 +21,14 @@ start_link(Args) ->
 start_child(ChildSpec) ->
     supervisor:start_child(?MODULE, ChildSpec).
 
-init(Path) ->
+init([Rel, Path]) ->
     {ok,{{one_for_all,0,1},
 	 [
 	  {'edist-agent',
 	   {edist_agent,start_link,[]},
 	   permanent, 2000, worker,[edist_agent]},
 	  {'edist-subscription',
-	   {subscription_fsm,start_link,[Path]},
+	   {subscription_fsm,start_link,[Rel, Path]},
 	   permanent, 2000, worker,[subscription_fsm]},
 	  {'edist-connection',
 	   {connection_fsm,start_link,[]},

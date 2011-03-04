@@ -185,21 +185,50 @@ handle_call({client, negotiate, ApiVsn, Args}, {Pid,_Tag}, State) ->
     {atomic, ok} = mnesia:transaction(F),
     {reply, {ok, ApiVsn, [], Cookie}, State};
 
-handle_call({client, join, Cookie, Facts}, _From, State) ->
-    join(Cookie, Facts, undefined, State);
-handle_call({client, rejoin, Cookie, Facts, Rel}, _From, State) ->
-    join(Cookie, Facts, Rel,  State);
+handle_call({client, join, Cookie, Facts, Rel}, _From, State) ->
+    error_logger:info_msg("Client ~p: JOIN with facts ~p~n",
+			   [Cookie, Facts]),
+    
+    F = fun() ->
+		[Client] = mnesia:read(edist_controller_clients,
+				       Cookie,
+				       write),
+		if
+		    Client#client.joined =:= true ->
+			throw("Already joined");
+		    true -> ok
+		end,
+
+		#edist_release_vsn{vsn=Vsn} = find_latest_active(Rel),
+		
+		UpdatedClient = Client#client{joined=true,
+					      facts=Facts,
+					      rel=Rel}, 
+		mnesia:write(edist_controller_clients, UpdatedClient, write),
+		gen_event:notify({global, edist_event_bus},
+				 {agent_join, Cookie, Facts}),
+		{ok, Vsn}
+	end,
+    try mnesia:transaction(F) of
+	{atomic, {ok, Vsn}} ->
+	    {reply, {ok, Vsn}, State}
+    catch
+	_:Error ->
+	    {reply, Error, State}
+    end;
 
 handle_call({client, download_release, Cookie}, {ClientPid, _Tag}, State) ->
     try
 	F = fun() ->
-		    [Client] = mnesia:read(edist_controller_clients,
-					   Cookie,
-					   read),
+		    [Client]
+			= mnesia:read(edist_controller_clients, Cookie, read),
+		    [#edist_release{config=Config}]
+			= mnesia:read(edist_releases, Client#client.rel, read),
+
 		    Version = find_latest_active(Client#client.rel),
-		    {Client, Version}
+		    {Client, Config, Version}
 	    end,
-	{atomic, {Client, Version}} = mnesia:transaction(F),
+	{atomic, {Client, Config, Version}} = mnesia:transaction(F),
 
 	% perform a parallel search for any elements with matching criteria
 	Parent = self(),
@@ -246,20 +275,8 @@ handle_call({client, download_release, Cookie}, {ClientPid, _Tag}, State) ->
 						       }
 						      ),
 
-		{reply, {ok, Version#edist_release_vsn.vsn, Dev}, State}
+		{reply, {ok, Version#edist_release_vsn.vsn, Config, Dev}, State}
 	end
-    catch
-	_:Error ->
-	    {reply, {error, Error}, State}
-    end;
-
-handle_call({assign, Cookie, Rel}, _From, State) ->
-    F = fun() ->
-		assign(Cookie, Rel)
-	end,
-    try mnesia:transaction(F) of
-	{atomic, ok} ->
-	    {reply, ok, State}
     catch
 	_:Error ->
 	    {reply, {error, Error}, State}
@@ -342,21 +359,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Helper functions
 %% --------------------------------------------------------------------
 
-assign(Cookie, Rel) ->
-    [Client] = mnesia:read(edist_controller_clients, Cookie, write),
-    if
-	Client#client.rel =/= undefined ->
-	    throw("Already assigned");
-	true -> ok
-    end,
-    
-    mnesia:write(edist_controller_clients, Client#client{rel=Rel}, write),
-    
-    [#edist_release{config=Config}] = mnesia:read(edist_releases, Rel, read),
-    
-    Client#client.pid ! {assignment, Rel, Config},
-    ok.
-
 find_latest(Name) ->
     find_latest(Name, nofilter).
 
@@ -396,46 +398,6 @@ find_latest(Name, Filter) ->
 	undefined ->
 	    throw("No suitable version found");
 	V -> V
-    end.
-
-join(Cookie, Facts, Rel, State) ->
-    error_logger:info_msg("Client ~p: JOIN with facts ~p~n",
-			   [Cookie, Facts]),
-    
-    F = fun() ->
-		[Client] = mnesia:read(edist_controller_clients,
-				       Cookie,
-				       write),
-		if
-		    Client#client.joined =:= true ->
-			throw("Already joined");
-		    true -> ok
-		end,
-
-		Vsn = case Rel of
-			  undefined ->
-			      none;
-			  _ ->
-			      #edist_release_vsn{vsn=V} = find_latest_active(Rel),
-			      V
-		      end,
-
-		UpdatedClient = Client#client{joined=true,
-					      facts=Facts,
-					      rel=Rel}, 
-		mnesia:write(edist_controller_clients, UpdatedClient, write),
-		gen_event:notify({global, edist_event_bus},
-				 {agent_join, Cookie, Facts}),
-		{ok, Vsn}
-	end,
-    try mnesia:transaction(F) of
-	{atomic, {ok, none}} ->
-	    {reply, ok, State};
-	{atomic, {ok, Vsn}} ->
-	    {reply, {ok, Vsn}, State}
-    catch
-	_:Error ->
-	    {reply, Error, State}
     end.
 
 inc_version(Name, Vsn) ->

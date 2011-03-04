@@ -1,8 +1,9 @@
 -module(subscription_fsm).
 -behavior(gen_fsm).
--export([init/1, start_link/1, handle_info/3, handle_event/3,
+-export([init/1, start_link/2, handle_info/3, handle_event/3,
 	 handle_sync_event/4, code_change/4, terminate/3]).
--export([connecting/2, assigning/2, binding/2, running/2, reconnecting/2]).
+-export([connecting/2, binding/2, disconnected_binding/2, upgrading_binding/2,
+	 running/2, reconnecting/2]).
 
 -include_lib("kernel/include/file.hrl").
 
@@ -12,10 +13,10 @@
 		tmoref
 	       }).
 
-start_link(Path) ->
-    gen_fsm:start_link({local, ?MODULE}, ?MODULE, [Path], []).
+start_link(Rel, Path) ->
+    gen_fsm:start_link({local, ?MODULE}, ?MODULE, [Rel, Path], []).
 
-init([Path]) ->
+init([Rel, Path]) ->
     Facts = facter:get_facts(),
 
     [Name, Host] = string:tokens(atom_to_list(node()), "@"),
@@ -44,24 +45,23 @@ init([Path]) ->
 
     error_logger:info_msg("Starting with facts: ~p~n", [Facts]),
     Paths = #paths{runtime=RuntimeDir},
-    {ok, connecting, #state{paths=Paths, facts=Facts,
+    {ok, connecting, #state{rel=Rel, paths=Paths, facts=Facts,
 			    cname=ClientName, cnode=ClientNode}}.
 
-connecting({controller, connected, Pid}, State) ->
-    {ok, Session} = controller_api:negotiate(Pid),
-    ok = controller_api:join(Session, State#state.facts),
- 
-    {next_state, assigning, State#state{cpid=Pid, session=Session}}.
-    
-assigning({assignment, Rel, Config}, State) ->
+connecting({controller, connected, CPid}, State) ->
     TmpFile = tempfile(),
 
     try
-	{ok, Vsn, IDev} =
-	    controller_api:download_release(State#state.session),
+	{ok, Session} = controller_api:negotiate(CPid),
+	{ok, Vsn} = controller_api:join(Session,
+					State#state.facts,
+					State#state.rel),
+ 
+	{ok, Vsn, Config, IDev} =
+	    controller_api:download_release(Session),
 	ok = remote_copy(IDev, TmpFile),
 	
-	RelName = relname(Rel, Vsn),
+	RelName = relname(State#state.rel, Vsn),
 	RuntimeDir = State#state.paths#paths.runtime,
 	ok = target_system:install(RelName, RuntimeDir, TmpFile),
 
@@ -75,47 +75,99 @@ assigning({assignment, Rel, Config}, State) ->
 	error_logger:info_msg("Launching ~s~n", [Cmd]),
 
 	S = self(),
-	Pid = spawn_link(fun() ->
+	RPid = spawn_link(fun() ->
 				 Result = os_cmd:os_cmd(Cmd),
 				 gen_fsm:send_event(S, {release_stopped, Result})
 			 end),
 
-	TmoRef = gen_fsm:start_timer(500, bind),
-	{next_state, binding,
-	 State#state{rel=Rel, vsn=Vsn, config=Config, rpid=Pid, tmoref=TmoRef}}
+	NewState = State#state{cpid=CPid, session=Session,
+		     vsn=Vsn, config=Config, rpid=RPid},
+	case bind(NewState) of
+	    true ->
+		{next_state, running, NewState};
+	    false ->
+		{next_state, binding, start_timer(500, NewState)}
+	end
     after
 	ok = file:delete(TmpFile)
-    end;
-assigning({controller, disconnected}, State) ->
-    {next_state, connecting, State#state{cpid=undefined, session=undefined}}.
+    end.
 
 binding({release_stopped, _Data}, State) ->
     gen_fsm:cancel_timer(State#state.tmoref),
     {stop, normal, State};
 binding({timeout, _, bind}, State) ->
-    error_logger:info_msg("Binding to ~p....~n", [State#state.cnode]), 
-    case net_adm:ping(State#state.cnode) of
-	pong ->
-	    error_logger:info_msg("Binding complete~n", []),
-	    gen_event:notify({global, edist_event_bus},
-			     {online, State#state.cnode}),
+    case bind(State) of
+	true ->
 	    {next_state, running, State};
-	_ ->
-	    TmoRef = gen_fsm:start_timer(1000, bind),
-	    {next_state, binding, State#state{tmoref=TmoRef}}
+	false ->
+	    {next_state, binding, start_timer(1000, State)}
+    end;
+binding({hotupdate, Vsn}, State) ->
+    if
+	Vsn =/= State#state.vsn ->
+	    {ok, upgrade_binding, State};
+	true ->
+	    {ok, binding, State}
+    end;
+binding({controller, disconnected}, State) ->
+    {next_state, disconnected_binding,
+     State#state{cpid=undefined, session=undefined}}.
+
+disconnected_binding({release_stopped, _Data}, State) ->
+    gen_fsm:cancel_timer(State#state.tmoref),
+    {stop, normal, State};
+disconnected_binding({timeout, _, bind}, State) ->
+    case bind(State) of
+	true ->
+	    {next_state, reconnecting, State};
+	false ->
+	    {next_state, disconnected_binding, start_timer(1000, State)}
+    end;
+disconnected_binding({controller, connected, CPid}, State) ->
+    {ok, Session} = controller_api:negotiate(CPid),
+    {ok, Vsn} = controller_api:join(Session, State#state.facts, State#state.rel),
+
+    NewState = State#state{cpid=CPid, session=Session},
+    if
+	Vsn =:= State#state.vsn ->
+	    {ok, binding, NewState};
+	true ->
+	    {ok, upgrading_binding, NewState}
     end.
+
+upgrading_binding({release_stopped, _Data}, State) ->
+    gen_fsm:cancel_timer(State#state.tmoref),
+    {stop, normal, State};
+upgrading_binding({timeout, _, bind}, State) ->
+    case bind(State) of
+	true ->
+	    NewState = upgrade(State),
+	    {next_state, running, NewState};
+	false ->
+	    {next_state, upgrading_binding, start_timer(1000, State)}
+    end;
+upgrading_binding({controller, disconnected}, State) ->
+    {next_state, disconnected_binding,
+     State#state{cpid=undefined, session=undefined}}.
 
 running({release_stopped, _Data}, State) ->
     {stop, normal, State};
-running({hotupdate, _Vsn}, _State) ->
-    ok;
+running({hotupdate, Vsn}, State) ->
+    NewState = if
+		   Vsn =/= State#state.vsn ->
+		       upgrade(State);
+		   true ->
+		       State
+	       end,
+    {next_state, running, NewState};
 running({controller, disconnected}, State) ->
     {next_state, reconnecting, State#state{cpid=undefined, session=undefined}}.
 
+reconnecting({release_stopped, _Data}, State) ->
+    {stop, normal, State};
 reconnecting({controller, connected, Pid}, State) ->
     {ok, Session} = controller_api:negotiate(Pid),
-    ok = controller_api:rejoin(Session, State#state.facts,
-			       State#state.rel),
+    {ok, Vsn} = controller_api:join(Session, State#state.facts, State#state.rel),
 
     {ok, running, State#state{cpid=Pid, session=Session}}.
 
@@ -138,6 +190,26 @@ terminate(Reason, running, State) ->
 terminate(Reason, _StateName, _State) ->
     error_logger:info_msg("Terminate: ~p~n", [Reason]),
     void.
+
+start_timer(Tmo, State) ->
+    TmoRef = gen_fsm:start_timer(Tmo, bind),
+    State#state{tmoref=TmoRef}.
+
+upgrade(State) ->
+    % FIXME
+    State.
+
+bind(State) ->
+    error_logger:info_msg("Binding to ~p....~n", [State#state.cnode]), 
+    case net_adm:ping(State#state.cnode) of
+	pong ->
+	    error_logger:info_msg("Binding complete~n", []),
+	    gen_event:notify({global, edist_event_bus},
+			     {online, State#state.cnode}),
+	    true;
+	_ ->
+	    false
+    end.
 
 relname(Rel, Vsn) ->
     Rel ++ "-" ++ Vsn.
