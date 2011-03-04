@@ -53,7 +53,8 @@ handle_call(_Request, _From, State) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
-handle_cast(_Msg, State) ->
+handle_cast(Msg, State) ->
+    io:format("~p~n", [Msg]),
     {noreply, State}.
 
 %% --------------------------------------------------------------------

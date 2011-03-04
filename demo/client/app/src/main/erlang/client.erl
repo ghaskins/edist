@@ -30,6 +30,9 @@ start_link() ->
 %%          {stop, Reason}
 %% --------------------------------------------------------------------
 init([]) ->
+    {ok, Vsn} = application:get_key(vsn),
+    gen_server:cast({global, server}, {init, Vsn}),
+    timer:send_after(1000, timeout),
     {ok, #state{}}.
 
 %% --------------------------------------------------------------------
@@ -63,6 +66,10 @@ handle_cast(_Msg, State) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
+handle_info(timeout, State) ->
+    gen_server:cast({global, server}, {msg, "Hello World"}),
+    timer:send_after(1000, timeout),
+    {noreply, State};
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -80,5 +87,7 @@ terminate(_Reason, _State) ->
 %% Returns: {ok, NewState}
 %% --------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
+    {ok, Vsn} = application:get_key(vsn),
+    gen_server:cast({global, server}, {upgrade, Vsn}),
     {ok, State}.
 
