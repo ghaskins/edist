@@ -15,7 +15,7 @@
 %% External functions
 %% ====================================================================
 start_link() ->
-    gen_server:start_link({global, ?MODULE}, ?MODULE, [], []).
+    gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
 %% ====================================================================
 %% Server functions
@@ -31,7 +31,7 @@ start_link() ->
 %% --------------------------------------------------------------------
 init([]) ->
     {ok, Vsn} = application:get_key(vsn),
-    gen_server:cast({global, server}, {init, Vsn}),
+    gen_server:cast({global, server}, {init, self(), Vsn}),
     timer:send_after(1000, timeout),
     {ok, #state{}}.
 
@@ -67,7 +67,7 @@ handle_cast(_Msg, State) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
 handle_info(timeout, State) ->
-    gen_server:cast({global, server}, {msg, erlang:now(), self(), "Hello World"}),
+    gen_server:cast({global, server}, {msg, self(), "Hello World"}),
     timer:send_after(1000, timeout),
     {noreply, State};
 handle_info(_Info, State) ->
@@ -88,6 +88,6 @@ terminate(_Reason, _State) ->
 %% --------------------------------------------------------------------
 code_change(_OldVsn, State, _Extra) ->
     {ok, Vsn} = application:get_key(vsn),
-    gen_server:cast({global, server}, {upgrade, Vsn}),
+    gen_server:cast({global, server}, {upgrade, self(), Vsn}),
     {ok, State}.
 

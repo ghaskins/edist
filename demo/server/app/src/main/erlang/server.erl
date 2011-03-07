@@ -53,8 +53,11 @@ handle_call(_Request, _From, State) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
+handle_cast({msg, Pid, Data}, State) ->
+    io:format("[~p] ~s from ~p~n", [erlang:now(), Data, erlang:node(Pid)]),
+    {noreply, State};
 handle_cast(Msg, State) ->
-    io:format("~p~n", [Msg]),
+    io:format("[~p] ~p~n", [erlang:now(), Msg]),
     {noreply, State}.
 
 %% --------------------------------------------------------------------
