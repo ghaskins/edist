@@ -5,13 +5,23 @@
 -export([start/2, stop/1]).
 
 start(_Type, _StartArgs) ->
-    case controller_sup:start_link() of
-	{ok, Pid} ->
-	    gen_event:add_handler({global, edist_event_bus}, event_logger, []),
-	    {ok, Pid};
-	Error ->
-	    Error
-    end.
+    Nodes = try
+		{ok, Props} = application:get_env(kernel, distributed),
+		{ok, App} = application:get_application(),
+		case proplists:get_value(App, Props) of
+		    undefined ->
+			throw(undefined);
+		    Value ->
+			Value
+		end
+	    catch
+		_:_ -> [node()]
+	    end,
+		
+    {ok, Pid} = controller_sup:start_link(Nodes),
+    gen_event:add_handler({global, edist_event_bus}, event_logger, []),
+
+    {ok, Pid}.
 
 stop(_State) ->
     ok.

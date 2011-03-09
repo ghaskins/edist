@@ -7,7 +7,7 @@
 -include_lib("stdlib/include/qlc.hrl").
 -include_lib("release.hrl").
 
--export([start_link/0]).
+-export([start_link/1]).
 -export([create_release/4, create_update/3, upload_release/4, commit_release/3]).
 -export([close_stream/1]).
 -export([inc_version/2, dec_version/2, rm_version/2, update_version/3]).
@@ -18,13 +18,15 @@
 -record(client, {cookie, pid, ref, joined=false, facts, rel}).
 -record(state, {}).
 
+-define(RECORD(R), {R, record_info(fields, R)}).
+
 api_version() -> 1.
 
 %% ====================================================================
 %% External functions
 %% ====================================================================
-start_link() ->
-    gen_server:start_link({global, ?MODULE}, ?MODULE, [], []).
+start_link(Nodes) ->
+    gen_server:start_link({global, ?MODULE}, ?MODULE, [Nodes], []).
 
 create_release(Name, InitialVsn, Config, []) ->
     gen_server:call({global, ?MODULE}, {create_release, Name, InitialVsn, Config}).
@@ -53,29 +55,27 @@ close_stream(IoDevice) ->
 %%          ignore               |
 %%          {stop, Reason}
 %% --------------------------------------------------------------------
-init([]) ->
-    ok = util:open_table(edist_releases,
-    			 [
-    			  {record_name, edist_release},
-    			  {attributes,
-    			   record_info(fields, edist_release)}
-    			 ]),
-    
-    ok = util:open_table(edist_release_blocks,
-    			 [
-    			  {record_name, edist_release_block},
-    			  {attributes,
-    			   record_info(fields, edist_release_block)}
-    			 ]),
+init([Nodes]) ->
+    {ok, App} = application:get_application(),
+    error_logger:info_msg("~p starting with replica set ~p~n", [App, Nodes]),
+
+    ok = open_table(edist_releases, ?RECORD(edist_release), Nodes),
+    ok = open_table(edist_release_blocks, ?RECORD(edist_release_block), Nodes),
     
     mnesia:delete_table(edist_controller_clients),
-    ok = util:open_table(edist_controller_clients,
-    			 [
-    			  {record_name, client},
-    			  {attributes, record_info(fields, client)}
-    			 ]),
+    ok = open_table(edist_controller_clients, ?RECORD(client), Nodes),
+
+    mnesia:change_config(extra_db_nodes, Nodes),
     
     {ok, #state{}}.
+
+open_table(Table, {Record, Info}, Nodes) ->
+    util:open_table(Table,
+		    [
+		     {record_name, Record},
+		     {attributes, Info},
+		     {ram_copies, Nodes}
+		    ]).
 
 handle_call({create_release, Name, InitialVsn, Config}, _From, State) ->
     F = fun() ->
