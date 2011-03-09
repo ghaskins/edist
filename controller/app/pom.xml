@@ -2,7 +2,7 @@
 <project>
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.github.ghaskins.edist</groupId>
-  <artifactId>controller</artifactId>
+  <artifactId>edist_controller</artifactId>
   <version>0.1-SNAPSHOT</version>
   <packaging>erlang-otp</packaging>
 

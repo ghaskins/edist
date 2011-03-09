@@ -9,7 +9,7 @@
   <dependencies>
     <dependency>
       <groupId>${project.groupId}</groupId>
-      <artifactId>controller</artifactId>
+      <artifactId>edist_controller</artifactId>
       <version>${project.version}</version>
       <type>erlang-otp</type>
       <scope>compile</scope>

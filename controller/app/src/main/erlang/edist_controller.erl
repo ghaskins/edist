@@ -1,7 +1,7 @@
 %%% -------------------------------------------------------------------
 %%% Author  : ghaskins
 %%% -------------------------------------------------------------------
--module(controller).
+-module(edist_controller).
 -behaviour(gen_server).
 
 -include_lib("stdlib/include/qlc.hrl").
@@ -130,12 +130,12 @@ handle_call({create_update, Name, NextVsn}, _From, State) ->
 handle_call({upload_release, Name, Vsn, Criteria}, _From, State) ->
     StartFunc = {release_input_device, start_link, [Name, Vsn, Criteria]},
 
-    case controller_sup:start_child({erlang:now(),
-				     StartFunc,
-				     transient,
-				     brutal_kill,
-				     worker,
-				     [release_input_device]}) of
+    case edist_controller_sup:start_child({erlang:now(),
+					   StartFunc,
+					   transient,
+					   brutal_kill,
+					   worker,
+					   [release_input_device]}) of
 	{ok, Pid} ->
 	    {reply, {ok, Pid}, State};
 	Error ->
@@ -273,14 +273,14 @@ handle_call({client, download_release, Cookie}, {ClientPid, _Tag}, State) ->
 		StartFunc = {release_output_device, start_link,
 			     [Client#client.rel, Version, Element, ClientPid]},
 		
-		{ok, Dev} = controller_sup:start_child({erlang:now(),
-							StartFunc,
-							transient,
-							brutal_kill,
-							worker,
-							[release_output_device]
-						       }
-						      ),
+		{ok, Dev} = edist_controller_sup:start_child({erlang:now(),
+							      StartFunc,
+							      transient,
+							      brutal_kill,
+							      worker,
+							      [release_output_device]
+							     }
+							    ),
 
 		{reply, {ok, Version#edist_release_vsn.vsn, Config, Dev}, State}
 	end

@@ -4,5 +4,5 @@
    {vsn, ${VERSION}},
    {modules, ${MODULES}},
    {registered, ${REGISTERED}},
-   {mod, {'controller_app', []}},
+   {mod, {'edist_controller_app', []}},
    {applications, ${APPLICATIONS}}]}.

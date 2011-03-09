@@ -6,13 +6,13 @@ net_adm:ping('contact1@linux-mp').
 Name = "client-release".
 Vsn = "0.1-SNAPSHOT".
 File = "/home/ghaskins/sandbox/git/edist/demo/client/release/target/" ++ Name ++ "-" ++ Vsn ++ ".tar.gz".
-ok = controller:create_release(Name, Vsn, "", []).
-{ok, ODev} = controller:upload_release(Name, Vsn, matchall, []).
+ok = edist_controller:create_release(Name, Vsn, "", []).
+{ok, ODev} = edist_controller:upload_release(Name, Vsn, matchall, []).
 {ok, IDev} = file:open(File, [read, binary]).
 file:copy(IDev, ODev).
 file:close(IDev).
-controller:close_stream(ODev).
-ok = controller:commit_release(Name, Vsn, []).
+edist_controller:close_stream(ODev).
+ok = edist_controller:commit_release(Name, Vsn, []).
 
 ---------------------------------
 

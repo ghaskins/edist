@@ -1,7 +1,7 @@
 %%% -------------------------------------------------------------------
 %%% Author  : ghaskins
 %%% -------------------------------------------------------------------
--module(controller_sup).
+-module(edist_controller_sup).
 -behaviour(supervisor).
 
 -export([start_link/1, start_child/1]).
@@ -24,7 +24,7 @@ start_child(ChildSpec) ->
 init([Nodes]) ->
     {ok,{{one_for_all,0,1},
 	 [{'edist-controller',
-	   {controller,start_link,[Nodes]},
+	   {edist_controller,start_link,[Nodes]},
 	   permanent, 2000, worker,[controller]},
 	  {'edist-event-bus',
 	   {gen_event, start_link, [{global, edist_event_bus}]},

@@ -1,5 +1,5 @@
 %% Author: ghaskins
--module(controller_app).
+-module(edist_controller_app).
 -behaviour(application).
 
 -export([start/2, stop/1]).
@@ -18,7 +18,7 @@ start(_Type, _StartArgs) ->
 		_:_ -> [node()]
 	    end,
 		
-    {ok, Pid} = controller_sup:start_link(Nodes),
+    {ok, Pid} = edist_controller_sup:start_link(Nodes),
     gen_event:add_handler({global, edist_event_bus}, event_logger, []),
 
     {ok, Pid}.

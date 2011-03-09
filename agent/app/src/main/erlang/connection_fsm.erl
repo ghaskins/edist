@@ -63,7 +63,7 @@ connect_controller(State) ->
     connect_controller(next_state, State).
 
 connect_controller(Tag, State) ->
-    case global:whereis_name(controller) of
+    case global:whereis_name(edist_controller) of
 	undefined ->
 	    TmoRef = gen_fsm:start_timer(1000, retry_connection),
 	    {Tag, connecting_controller, State#state{tmo_ref=TmoRef}};

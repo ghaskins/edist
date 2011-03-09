@@ -9,7 +9,7 @@
   <dependencies>
     <dependency>
       <groupId>com.github.ghaskins.edist</groupId>
-      <artifactId>controller</artifactId>
+      <artifactId>edist_controller</artifactId>
       <version>0.1-SNAPSHOT</version>
       <type>erlang-otp</type>
     </dependency>
