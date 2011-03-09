@@ -64,7 +64,28 @@ init([Nodes]) ->
     
     mnesia:delete_table(edist_controller_clients),
     ok = open_ram_table(edist_controller_clients, ?RECORD(client), [node()]),
-    
+  
+    % issue a compensating transaction to remove any dangling releases
+    F = fun() ->
+		CheckRel =
+		    fun(Rel) ->
+			    Dict = dict:filter(fun(_, Vsn) ->
+						       active_vsn(Vsn) =:= false
+					       end,
+					       Rel#edist_release.versions), 
+			    [{Rel#edist_release.name, Vsn#edist_release_vsn.vsn} ||
+				{_, Vsn} <- dict:to_list(Dict)]
+		    end,
+
+		Q = qlc:q([ CheckRel(Rel) || Rel <- mnesia:table(edist_releases)]),
+		lists:foreach(fun({Name, Vsn}) ->
+				      rm_version(Name, Vsn)
+			      end,
+			      lists:flatten(qlc:e(Q))),
+		ok
+	end,
+    {atomic, ok} = mnesia:transaction(F),
+
     {ok, #state{}}.
 
 open_ram_table(Table, RecordInfo, Nodes) ->
@@ -371,7 +392,7 @@ find_latest(Name) ->
 
 find_latest_active(Name) ->
     Filter = fun(Version) ->
-		     Version#edist_release_vsn.state =:= active
+		     active_vsn(Version)
 	     end,
     find_latest(Name, Filter).
 		    
@@ -453,3 +474,7 @@ rm_version(Name, Vsn) ->
 	      ]),
     qlc:e(Q),
     ok.
+
+active_vsn(Vsn) ->
+    Vsn#edist_release_vsn.state =:= active.
+
