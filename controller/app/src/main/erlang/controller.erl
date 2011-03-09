@@ -60,21 +60,28 @@ init([Nodes]) ->
     error_logger:info_msg("~p starting with replica set ~p~n", [App, Nodes]),
 
     ok = open_table(edist_releases, ?RECORD(edist_release), Nodes),
-    ok = open_table(edist_release_blocks, ?RECORD(edist_release_block), Nodes),
+    ok = open_disc_table(edist_release_blocks, ?RECORD(edist_release_block), Nodes),
     
     mnesia:delete_table(edist_controller_clients),
-    ok = open_table(edist_controller_clients, ?RECORD(client), Nodes),
-
-    mnesia:change_config(extra_db_nodes, Nodes),
+    ok = open_ram_table(edist_controller_clients, ?RECORD(client), [node()]),
     
     {ok, #state{}}.
 
-open_table(Table, {Record, Info}, Nodes) ->
+open_ram_table(Table, RecordInfo, Nodes) ->
+    open_table(Table, ram_copies, RecordInfo, Nodes). 
+
+open_disc_table(Table, RecordInfo, Nodes) ->
+    open_table(Table, disc_only_copies, RecordInfo, Nodes). 
+
+open_table(Table, RecordInfo, Nodes) ->
+    open_table(Table, disc_copies, RecordInfo, Nodes). 
+
+open_table(Table, Type, {Record, Info}, Nodes) ->
     util:open_table(Table,
 		    [
 		     {record_name, Record},
 		     {attributes, Info},
-		     {ram_copies, Nodes}
+		     {Type, Nodes}
 		    ]).
 
 handle_call({create_release, Name, InitialVsn, Config}, _From, State) ->
