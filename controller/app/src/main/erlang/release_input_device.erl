@@ -7,7 +7,7 @@
 -include_lib("stdlib/include/qlc.hrl").
 -include_lib("release.hrl").
 
--define(CHARS_PER_REC, 4096).
+-define(CHARS_PER_REC, 65536).
 
 -record(state, {name, vsn, elem_id, position=0, buffer}).
 
