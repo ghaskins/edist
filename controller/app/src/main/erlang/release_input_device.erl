@@ -89,7 +89,7 @@ terminate(normal, #state{name=Name,vsn=Vsn,elem_id=Id} = State) ->
 		    end,
 
     F = fun() ->
-		controller:update_version(Name, Vsn, UpdateVersion),
+		edist_controller:update_version(Name, Vsn, UpdateVersion),
 		ok
 	end,
     {atomic, ok} = mnesia:transaction(F),
@@ -98,7 +98,7 @@ terminate(normal, #state{name=Name,vsn=Vsn,elem_id=Id} = State) ->
 terminate(_Reason, #state{name=Name, vsn=Vsn} = _State) ->
     % issue a compensating transaction to remove all traces of this instance
     F = fun() ->
-		controller:rm_version(Name, Vsn)
+		edist_controller:rm_version(Name, Vsn)
 	end,
     {atomic, ok} = mnesia:transaction(F),
     ok.

@@ -19,7 +19,7 @@ init({Name, Version, Element, ClientPid}) ->
 			block_size=BlkSize,
 			total_size=Size} = Element,
     F = fun() ->
-		controller:inc_version(Name, Vsn),
+		edist_controller:inc_version(Name, Vsn),
 		ok
 	end,
     {atomic, ok} = mnesia:transaction(F),
@@ -45,10 +45,10 @@ code_change(_OldVsn, State, _Extra) ->
 
 terminate(_Reason, #state{name=Name,vsn=Vsn}) ->
     F = fun() ->
-		Version = controller:dec_version(Name, Vsn),
+		Version = edist_controller:dec_version(Name, Vsn),
 		if
 		    Version#edist_release_vsn.ref_count =:= 0 ->
-			controller:rm_version(Name, Vsn);
+			edist_controller:rm_version(Name, Vsn);
 		    true ->
 			ok
 		end
