@@ -2,7 +2,7 @@
 <project>
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.github.ghaskins.edist.rpm</groupId>
-  <artifactId>agent</artifactId>
+  <artifactId>edist_agent</artifactId>
   <version>0.1-SNAPSHOT</version>
   <packaging>source-rpm</packaging>
 

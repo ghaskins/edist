@@ -5,6 +5,17 @@
 -export([start/2, stop/1]).
 
 start(_Type, _StartArgs) ->
+    case init:get_argument(pidfile) of
+    {ok, [PidFile]} ->
+        case file:write_file(PidFile, os:getpid()) of
+	    ok -> ok;
+	    Error ->
+		io:format("Failed to write PID file ~s, error: ~p",
+			  [PidFile, Error])
+        end;
+	_ -> ok
+    end,
+
     RequiredArgs = [rel, path],
 
     lists:foldl(fun(Arg, _Acc) ->
