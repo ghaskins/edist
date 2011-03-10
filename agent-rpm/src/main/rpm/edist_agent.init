@@ -2,9 +2,9 @@
 ### BEGIN INIT INFO
 # Provides:          edist_agent
 # Required-Start:    $syslog $remote_fs
-# Should-Start:      $time ypbind smtp
+# Should-Start:      $time ypbind smtp puppet
 # Required-Stop:     $syslog $remote_fs
-# Should-Stop:       ypbind smtp
+# Should-Stop:       ypbind smtp puppet
 # Default-Start:     3 5
 # Default-Stop:      0 1 2 6
 # Short-Description: edist_agent XYZ daemon providing ZYX
@@ -38,7 +38,7 @@ case "$1" in
 	## Start daemon with startproc(8). If this fails
 	## the return value is set appropriately by startproc.
 
-	run_erl -daemon /tmp $LOGDIR "erl -smp -boot $BOOTSCRIPT -sname $NODENAME -pidfile $PIDFILE -edist_agent rel '\"client-release\"' path '\"$HOME\"' -agent_link contacts '[\"contact1@linux-mp\", \"contact2@linux-mp\"]'"
+	run_erl -daemon /tmp $LOGDIR "erl -smp -boot $BOOTSCRIPT -sname $NODENAME -pidfile $PIDFILE -config /etc/edist_agent -agent_link contacts '[\"contact1@linux-mp\", \"contact2@linux-mp\"]'"
 
 	# Remember status and be verbose
 	rc_status -v

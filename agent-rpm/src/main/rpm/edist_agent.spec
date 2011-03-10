@@ -39,8 +39,13 @@ Authors
 mvn install -DoutputDirectory=$RPM_BUILD_ROOT%{rootdir}
 mkdir -p $RPM_BUILD_ROOT/%{logdir}
 mkdir -p $RPM_BUILD_ROOT/%{homedir}
+mkdir -p $RPM_BUILD_ROOT/etc
 
 install -m 600 %{SOURCE2} $RPM_BUILD_ROOT/%{homedir}/.erlang.cookie
+
+cat > $RPM_BUILD_ROOT/etc/edist_agent.config <<EOF
+[{edist_agent, [{rel, "client-release"}, {path, "%{homedir}"}]}].
+EOF
 
 #install init script
 mkdir -p $RPM_BUILD_ROOT/etc/init.d
@@ -73,5 +78,6 @@ exit 0
 %{homedir}
 %{logdir}
 /etc/init.d/%{name}
+/etc/edist_agent.config
 
 %changelog
