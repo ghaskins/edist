@@ -38,7 +38,7 @@ case "$1" in
 	## Start daemon with startproc(8). If this fails
 	## the return value is set appropriately by startproc.
 
-	run_erl -daemon /tmp $LOGDIR "erl -smp -boot $BOOTSCRIPT -sname $NODENAME -pidfile $PIDFILE -config /etc/edist_agent -agent_link contacts '[\"contact1@linux-mp\", \"contact2@linux-mp\"]'"
+	sudo -u edist -i run_erl -daemon $HOME/ $LOGDIR "erl -smp -boot $BOOTSCRIPT -sname $NODENAME -pidfile $PIDFILE -config /etc/edist_agent"
 
 	# Remember status and be verbose
 	rc_status -v

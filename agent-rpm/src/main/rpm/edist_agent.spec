@@ -16,7 +16,7 @@ Source1: edist_agent.init
 Source2: default-cookie
 BuildRoot: %{_tmppath}/%{name}-%{version}-root
 
-Requires: erlang facter
+Requires: erlang facter sudo
 
 %if 0%{?suse_version} > 1110  
 Requires(pre):    pwdutils  
@@ -37,8 +37,8 @@ Authors
 
 %install
 mvn install -DoutputDirectory=$RPM_BUILD_ROOT%{rootdir}
-mkdir -p $RPM_BUILD_ROOT/%{logdir}
-mkdir -p $RPM_BUILD_ROOT/%{homedir}
+install -d -m 755 $RPM_BUILD_ROOT/%{logdir} 
+install -d -m 755 $RPM_BUILD_ROOT/%{homedir} 
 mkdir -p $RPM_BUILD_ROOT/etc
 
 install -m 600 %{SOURCE2} $RPM_BUILD_ROOT/%{homedir}/.erlang.cookie
@@ -75,8 +75,9 @@ exit 0
 %files
 %defattr(-,root,root)
 %{rootdir}
-%{homedir}
-%{logdir}
+%dir %attr(0755, edist, root) %{homedir}
+%attr(0600, edist, root) %{homedir}/.erlang.cookie
+%dir %attr(0755, edist, root) %{logdir}
 /etc/init.d/%{name}
 /etc/edist_agent.config
 
