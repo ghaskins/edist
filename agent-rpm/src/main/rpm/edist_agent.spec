@@ -46,7 +46,10 @@ mkdir -p $RPM_BUILD_ROOT/%{_sbindir}
 install -m 600 %{SOURCE2} $RPM_BUILD_ROOT/%{homedir}/.erlang.cookie
 
 cat > $RPM_BUILD_ROOT/etc/edist_agent.config <<EOF
-[{edist_agent, [{rel, "client-release"}, {path, "%{homedir}"}]}].
+[
+ {edist_agent, [{rel, "client-release"}, {path, "%{homedir}"}]},
+ {agent_link, [{contacts, ["contact@edist-controller"]}]}
+].
 EOF
 
 cat > $RPM_BUILD_ROOT/%{_sbindir}/%{name} <<EOF 
