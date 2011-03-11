@@ -21,16 +21,8 @@
 # Reset status of this service
 rc_reset
 
-export VSN=${project.version}
-export ROOT=%FINAL_ROOTDIR%
-export HOME=%FINAL_HOME%
-export LOGDIR=%FINAL_LOGDIR%
-export ERL_LIBS=$ROOT/lib
-
-PIDFILE=/var/run/edist_agentd.pid
-BOOTSCRIPT=$ROOT/releases/$VSN/start
-NODENAME=edist_agentd
 BEAMEXE=$(rpm -ql erlang | grep beam.smp)
+PIDFILE=/var/run/edist_agent.pid
 
 case "$1" in
     start)
@@ -38,7 +30,7 @@ case "$1" in
 	## Start daemon with startproc(8). If this fails
 	## the return value is set appropriately by startproc.
 
-	sudo -u edist -i run_erl -daemon $HOME/ $LOGDIR "erl -smp -boot $BOOTSCRIPT -sname $NODENAME -pidfile $PIDFILE -config /etc/edist_agent"
+	sudo -u edist -i %DAEMON%
 
 	# Remember status and be verbose
 	rc_status -v

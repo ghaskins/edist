@@ -1,6 +1,7 @@
 %define rootdir %{_libdir}/%{name}
 %define homedir %{_localstatedir}/lib/%{name}
 %define logdir %{_localstatedir}/log/%{name}
+%define realvsn ${project.version}
 
 BuildRequires: erlang maven
 
@@ -40,6 +41,7 @@ mvn install -DoutputDirectory=$RPM_BUILD_ROOT%{rootdir}
 install -d -m 755 $RPM_BUILD_ROOT/%{logdir} 
 install -d -m 755 $RPM_BUILD_ROOT/%{homedir} 
 mkdir -p $RPM_BUILD_ROOT/etc
+mkdir -p $RPM_BUILD_ROOT/%{_sbindir}
 
 install -m 600 %{SOURCE2} $RPM_BUILD_ROOT/%{homedir}/.erlang.cookie
 
@@ -47,9 +49,19 @@ cat > $RPM_BUILD_ROOT/etc/edist_agent.config <<EOF
 [{edist_agent, [{rel, "client-release"}, {path, "%{homedir}"}]}].
 EOF
 
+cat > $RPM_BUILD_ROOT/%{_sbindir}/%{name} <<EOF 
+#!/bin/bash
+
+export ERL_LIBS=%{rootdir}/lib
+
+run_erl -daemon %{homedir}/ %{logdir} "erl -smp -boot %{rootdir}/releases/%{realvsn}/start -sname edist_agentd -pidfile /var/run/edist_agent.pid -noshell -config /etc/edist_agent"
+EOF
+
+chmod a+x $RPM_BUILD_ROOT/%{_sbindir}/%{name}
+
 #install init script
 mkdir -p $RPM_BUILD_ROOT/etc/init.d
-cat %{SOURCE1} | sed "s|%FINAL_ROOTDIR%|%{rootdir}|" | sed "s|%FINAL_HOME%|%{homedir}|" | sed "s|%FINAL_LOGDIR%|%{logdir}|" > $RPM_BUILD_ROOT/etc/init.d/%{name}
+cat %{SOURCE1} | sed "s|%%DAEMON%%|%{_sbindir}/%{name}|" > $RPM_BUILD_ROOT/etc/init.d/%{name}
 
 chmod a+x $RPM_BUILD_ROOT/etc/init.d/%{name}
 
@@ -80,5 +92,6 @@ exit 0
 %dir %attr(0755, edist, root) %{logdir}
 /etc/init.d/%{name}
 /etc/edist_agent.config
+%{_sbindir}/%{name}
 
 %changelog
