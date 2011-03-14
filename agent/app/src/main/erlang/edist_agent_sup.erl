@@ -27,9 +27,9 @@ init([Rel, Path]) ->
 	  {'edist-agent',
 	   {edist_agent,start_link,[]},
 	   permanent, 2000, worker,[edist_agent]},
-	  {'edist-subscription',
-	   {subscription_fsm,start_link,[Rel, Path]},
-	   permanent, 2000, worker,[subscription_fsm]},
+	  {'edist-release',
+	   {release_fsm,start_link,[Rel, Path]},
+	   permanent, 2000, worker,[release_fsm]},
 	  {'edist-connection',
 	   {connection_fsm,start_link,[]},
 	   permanent, 2000, worker,[connection_fsm]}

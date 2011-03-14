@@ -1,4 +1,4 @@
--module(subscription_fsm).
+-module(release_fsm).
 -behavior(gen_fsm).
 -export([init/1, start_link/2, handle_info/3, handle_event/3,
 	 handle_sync_event/4, code_change/4, terminate/3]).
