@@ -6,10 +6,12 @@
 
 -include_lib("stdlib/include/qlc.hrl").
 -include_lib("release.hrl").
+-include_lib("groups.hrl").
 
 -export([start_link/1]).
 -export([create_release/4, create_update/3, upload_release/4, commit_release/3]).
 -export([close_stream/1]).
+-export([create_group/4]).
 -export([inc_version/2, dec_version/2, rm_version/2, update_version/3]).
 
 %% gen_server callbacks
@@ -43,6 +45,10 @@ commit_release(Name, Vsn, []) ->
 close_stream(IoDevice) ->
     gen_server:call(IoDevice, close).
 
+create_group(Name, Criteria, Releases, []) ->
+    gen_server:call({global, ?MODULE},
+		    {create_group, Name, Criteria, Releases}).
+
 %% ====================================================================
 %% Server functions
 %% ====================================================================
@@ -62,6 +68,7 @@ init([Nodes]) ->
     ok = open_table(edist_releases, ?RECORD(edist_release), Nodes),
     ok = open_disc_table(edist_release_blocks, ?RECORD(edist_release_block), Nodes),
     
+    ok = open_table(edist_groups, ?RECORD(edist_group), Nodes),
     mnesia:delete_table(edist_controller_clients),
     ok = open_ram_table(edist_controller_clients, ?RECORD(client), [node()]),
   
@@ -188,6 +195,30 @@ handle_call({commit_release, Name, Vsn}, _From, State) ->
 	    {reply, {error, Error}, State}
     end;
 
+handle_call({create_group, Name, Criteria, Releases}, _From, State) ->
+    F = fun() ->
+		{ok, _} = util:compile_native(Criteria),
+		[] = mnesia:read(edist_groups, Name, write),
+		Group = #edist_group{name=Name,
+				     criteria=Criteria,
+				     releases=Releases},
+		mnesia:write(edist_groups, Group, write),
+		
+		lists:foreach(fun(Rel) ->
+				      [_] = mnesia:read(edist_releases, Rel, read)
+			      end,
+			      Releases),
+		ok
+	end,
+    try mnesia:transaction(F) of
+	{atomic, ok} ->
+	    {reply, ok, State}
+    catch
+	_:Error ->
+	    {reply, {error, Error}, State}
+    end;
+
+
 handle_call({client, negotiate, ApiVsn, Args}, {Pid,_Tag}, State) ->
     ApiVsn = api_version(),
     Cookie = erlang:now(),
@@ -217,17 +248,28 @@ handle_call({client, join, Cookie, Facts}, _From, State) ->
 		    true -> ok
 		end,
 
-		% FIXME: Assume all releases are assigned to this node
-		Q = qlc:q([Rel ||
-			      #edist_release{name=Rel} 
-				  <- mnesia:table(edist_releases)]),
-		Releases = qlc:e(Q),
+		% perform a parallel search against all registered groups
+		% looking for any matches.  Any releases assigned to the
+		% group are then assigned to the client
+		Q = qlc:q([{G#edist_group.criteria, G}
+			   || G <- mnesia:table(edist_groups)]),
+		Criterion = qlc:e(Q),
+		Releases
+		    = lists:foldl(fun({match, Group}, Acc) ->
+					  R = Group#edist_group.releases,
+					  sets:union(Acc, sets:from_list(R));
+				      (_, Acc) ->
+					  Acc
+				  end,
+				  sets:new(),
+				  process_criterion(Facts, Criterion)
+				 ),
 
 		UpdatedClient = Client#client{joined=true, facts=Facts}, 
 		mnesia:write(edist_controller_clients, UpdatedClient, write),
 		gen_event:notify({global, edist_event_bus},
 				 {agent_join, Cookie, Facts}),
-		{ok, Releases}
+		{ok, sets:to_list(Releases)}
 	end,
     try mnesia:transaction(F) of
 	{atomic, {ok, Releases}} ->
@@ -280,36 +322,21 @@ handle_call({client, download_release, Cookie, Rel}, {ClientPid, _Tag}, State) -
 	    end,
 	{atomic, {Client, Version}} = mnesia:transaction(F),
 
-	% perform a parallel search for any elements with matching criteria
-	Parent = self(),
-	Work = fun(#edist_release_elem{criteria=Criteria} = Element) ->
-		       % FIXME: We are JIT'ing the criteria, might want to 
-		       % precompile/cache somehow
-		       {ok, Fun} = util:compile_native(Criteria),
-		       case Fun(Client#client.facts) of
-			   match ->
-			       Parent ! {self(), {match, Element}};
-			   nomatch ->
-			       Parent ! {self(), nomatch}
-		       end
-	       end,
+	Criterion = [{Element#edist_release_elem.criteria, Element}
+		     || Element <- Version#edist_release_vsn.elements],
 
-	Pids = [spawn_link(fun() -> Work(Element) end)
-		|| Element <- Version#edist_release_vsn.elements],
-	
+	Results = process_criterion(Client#client.facts, Criterion),
+
 	% grab the first matching reply since the list is in prio order
-	case lists:foldl(fun(Pid, nomatch) ->
-				 receive
-				     {Pid, nomatch} -> nomatch; 
-				     {Pid, {match, Element}} -> Element
-				 end;
-			    (Pid, Element) ->
-				 receive
-				     {Pid, _} -> Element
-				 end
+	case lists:foldl(fun({nomatch, _}, nomatch) ->
+				 nomatch;
+			    ({match, Element}, nomatch) ->
+				 Element;
+			    (_, Element) ->
+				 Element
 			 end,
 			 nomatch,
-			 Pids) of
+			 Results) of
 	    nomatch ->
 		throw("Matching criteria not found");
 	    Element ->
@@ -501,3 +528,30 @@ rm_version(Name, Vsn) ->
 active_vsn(Vsn) ->
     Vsn#edist_release_vsn.state =:= active.
 
+process_criterion(Facts, Criterion) ->
+    % perform a parallel search for any elements with matching criteria   
+    Parent = self(),
+    Work = fun({Criteria, Cookie}) ->
+		   % FIXME: We are JIT'ing the criteria, might want to 
+		   % precompile/cache somehow
+		   {ok, Fun} = util:compile_native(Criteria),
+		   Result = try Fun(Facts) of
+				match -> {match, Cookie};
+				nomatch -> {nomatch, Cookie}
+			    catch
+				_:Error -> {exception, Error}
+			    end,
+		   
+		   Parent ! {criteria, self(), Result}
+	   end,
+    
+    Pids = [spawn_link(fun() -> Work(Criteria) end)
+	    || Criteria <- Criterion],
+    
+    lists:map(fun(Pid) ->
+		      receive
+			  {criteria, Pid, {exception, Error}} -> throw(Error);
+			  {criteria, Pid, Result} -> Result
+		      end
+	      end,
+	      Pids).
