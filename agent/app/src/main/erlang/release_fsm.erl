@@ -7,32 +7,18 @@
 
 -include_lib("kernel/include/file.hrl").
 
--record(paths, {runtime}).
--record(state, {rel, vsn, paths, facts, config,
-		cpid, cname, cnode, session, rpid,
+-record(state, {rel, vsn, path, config,
+		cname, cnode, session, subid, rpid,
 		tmoref
 	       }).
 
-start_link(Rel, Path) ->
-    gen_fsm:start_link({local, ?MODULE}, ?MODULE, [Rel, Path], []).
+start_link(Rel, BasePath) ->
+    gen_fsm:start_link({local, ?MODULE}, ?MODULE, [Rel, BasePath], []).
 
-init([Rel, Path]) ->
-    Facts = facter:get_facts(),
-
+init([Rel, BasePath]) ->
     [Name, Host] = string:tokens(atom_to_list(node()), "@"),
 
-    ClientName = Name ++ "-client",
-    ClientNode = list_to_atom(ClientName ++ "@" ++ Host),
-
-    % Ensure that the client is not already running
-    case net_adm:ping(ClientNode) of
-	pong ->
-	    rpc:call(ClientNode, init, stop, []);
-	_ ->
-	    void
-    end,
-
-    RuntimeDir = filename:join([Path, "runtime"]),
+    RuntimeDir = filename:join([BasePath, "runtime"]),
 
     case filelib:is_dir(RuntimeDir) of
 	true ->
@@ -43,26 +29,36 @@ init([Rel, Path]) ->
 	    ok = filelib:ensure_dir(RuntimeDir)
     end,
 
-    error_logger:info_msg("Starting with facts: ~p~n", [Facts]),
-    Paths = #paths{runtime=RuntimeDir},
-    {ok, connecting, #state{rel=Rel, paths=Paths, facts=Facts,
+    ClientName = Name ++ "-" ++ Rel ++ "-client",
+    ClientNode = list_to_atom(ClientName ++ "@" ++ Host),
+
+    % Ensure that the client is not already running
+    case net_adm:ping(ClientNode) of
+	pong ->
+	    rpc:call(ClientNode, init, stop, []);
+	_ ->
+	    void
+    end,
+
+    {ok, connecting, #state{rel=Rel, path=RuntimeDir, 
 			    cname=ClientName, cnode=ClientNode}}.
 
-connecting({controller, connected, CPid}, State) ->
+connecting({controller, connected, Session}, State) ->
     TmpFile = tempfile(),
 
     try
-	{ok, Session} = controller_api:negotiate(CPid),
-	{ok, Vsn} = controller_api:join(Session,
-					State#state.facts,
-					State#state.rel),
- 
-	{ok, Vsn, Config, IDev} =
-	    controller_api:download_release(Session),
+	{ok, RelProps, SubId} =
+	    controller_api:subscribe_release(Session, State#state.rel),
+
+	Config = get_prop(config, RelProps),
+
+	{ok, Vsn, IDev} =
+	    controller_api:download_release(Session, State#state.rel),
+
 	ok = remote_copy(IDev, TmpFile),
 	
 	RelName = relname(State#state.rel, Vsn),
-	RuntimeDir = State#state.paths#paths.runtime,
+	RuntimeDir = State#state.path,
 	ok = target_system:install(RelName, RuntimeDir, TmpFile),
 
 	BootFile = filename:join([RuntimeDir, "releases", Vsn, "start"]),
@@ -80,8 +76,8 @@ connecting({controller, connected, CPid}, State) ->
 				 gen_fsm:send_event(S, {release_stopped, Result})
 			 end),
 
-	NewState = State#state{cpid=CPid, session=Session,
-		     vsn=Vsn, config=Config, rpid=RPid},
+	NewState = State#state{session=Session, subid=SubId,
+			       vsn=Vsn, config=Config, rpid=RPid},
 	case bind(NewState) of
 	    true ->
 		{next_state, running, NewState};
@@ -110,8 +106,7 @@ binding({hotupdate, Vsn}, State) ->
 	    {ok, binding, State}
     end;
 binding({controller, disconnected}, State) ->
-    {next_state, disconnected_binding,
-     State#state{cpid=undefined, session=undefined}}.
+    {next_state, disconnected_binding, State#state{session=undefined, subid=undefined}}.
 
 disconnected_binding({release_stopped, _Data}, State) ->
     gen_fsm:cancel_timer(State#state.tmoref),
@@ -123,13 +118,15 @@ disconnected_binding({timeout, _, bind}, State) ->
 	false ->
 	    {next_state, disconnected_binding, start_timer(1000, State)}
     end;
-disconnected_binding({controller, connected, CPid}, State) ->
-    {ok, Session} = controller_api:negotiate(CPid),
-    {ok, Vsn} = controller_api:join(Session, State#state.facts, State#state.rel),
+disconnected_binding({controller, connected, Session}, State) ->
+    {ok, RelProps, SubId} =
+	controller_api:subscribe_release(Session, State#state.rel),
+    
+    NewState = State#state{session=Session, subid=SubId},
 
-    NewState = State#state{cpid=CPid, session=Session},
+    Vsn = get_prop(vsn, RelProps),
     if
-	Vsn =:= State#state.vsn ->
+	Vsn =:= NewState#state.vsn ->
 	    {ok, binding, NewState};
 	true ->
 	    {ok, upgrading_binding, NewState}
@@ -141,35 +138,41 @@ upgrading_binding({release_stopped, _Data}, State) ->
 upgrading_binding({timeout, _, bind}, State) ->
     case bind(State) of
 	true ->
-	    NewState = upgrade(State),
-	    {next_state, running, NewState};
+	    {next_state, running, upgrade(State)};
 	false ->
 	    {next_state, upgrading_binding, start_timer(1000, State)}
     end;
 upgrading_binding({controller, disconnected}, State) ->
     {next_state, disconnected_binding,
-     State#state{cpid=undefined, session=undefined}}.
+     State#state{session=undefined, subid=undefined}}.
 
 running({release_stopped, _Data}, State) ->
     {stop, normal, State};
 running({hotupdate, Vsn}, State) ->
-    NewState = if
-		   Vsn =/= State#state.vsn ->
-		       upgrade(State);
-		   true ->
-		       State
-	       end,
-    {next_state, running, NewState};
+    if
+	Vsn =/= State#state.vsn ->
+	    {next_state, running, upgrade(State)};
+	true ->
+	    {next_state, running, State}
+    end;
 running({controller, disconnected}, State) ->
-    {next_state, reconnecting, State#state{cpid=undefined, session=undefined}}.
+    {next_state, reconnecting, State#state{session=undefined, subid=undefined}}.
 
 reconnecting({release_stopped, _Data}, State) ->
     {stop, normal, State};
-reconnecting({controller, connected, Pid}, State) ->
-    {ok, Session} = controller_api:negotiate(Pid),
-    {ok, Vsn} = controller_api:join(Session, State#state.facts, State#state.rel),
+reconnecting({controller, connected, Session}, State) ->
+    {ok, RelProps, SubId} =
+	controller_api:subscribe_release(Session, State#state.rel),
+    
+    Vsn = get_prop(vsn, RelProps),
 
-    {ok, running, State#state{cpid=Pid, session=Session}}.
+    NewState = State#state{session=Session, subid=SubId},
+    if
+	Vsn =/= NewState#state.vsn ->
+	    {next_state, running, upgrade(NewState)};
+	true ->
+	    {next_state, running, NewState}
+    end.
 
 handle_event(Event, _StateName, _State) ->
     throw({"Unexpected event", Event}).
@@ -198,6 +201,12 @@ start_timer(Tmo, State) ->
 upgrade(State) ->
     % FIXME
     State.
+
+get_prop(Prop, Props) ->
+    case proplists:get_value(Prop, Props) of
+	undefined -> throw({"Required property missing", Prop});
+	V -> V
+    end.
 
 bind(State) ->
     error_logger:info_msg("Binding to ~p....~n", [State#state.cnode]), 

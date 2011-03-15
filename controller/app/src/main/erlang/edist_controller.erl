@@ -15,7 +15,7 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--record(client, {cookie, pid, ref, joined=false, facts, rel}).
+-record(client, {cookie, pid, ref, joined=false, facts}).
 -record(state, {}).
 
 -define(RECORD(R), {R, record_info(fields, R)}).
@@ -178,16 +178,6 @@ handle_call({commit_release, Name, Vsn}, _From, State) ->
 			       end),
 		gen_event:notify({global, edist_event_bus},
 				 {release_update, Name, Vsn}),
-
-		Q = qlc:q([ Client || 
-			      Client <- mnesia:table(edist_controller_clients),
-			      Client#client.rel =:= Name
-			  ]),
-		lists:foreach(fun(Client) ->
-				      Client#client.pid ! {update, Vsn}	      
-			      end,
-			      qlc:e(Q)),
-
 		ok
 	end,
     try mnesia:transaction(F) of
@@ -213,7 +203,7 @@ handle_call({client, negotiate, ApiVsn, Args}, {Pid,_Tag}, State) ->
     {atomic, ok} = mnesia:transaction(F),
     {reply, {ok, ApiVsn, [], Cookie}, State};
 
-handle_call({client, join, Cookie, Facts, Rel}, _From, State) ->
+handle_call({client, join, Cookie, Facts}, _From, State) ->
     error_logger:info_msg("Client ~p: JOIN with facts ~p~n",
 			   [Cookie, Facts]),
     
@@ -227,36 +217,68 @@ handle_call({client, join, Cookie, Facts, Rel}, _From, State) ->
 		    true -> ok
 		end,
 
-		#edist_release_vsn{vsn=Vsn} = find_latest_active(Rel),
-		
-		UpdatedClient = Client#client{joined=true,
-					      facts=Facts,
-					      rel=Rel}, 
+		% FIXME: Assume all releases are assigned to this node
+		Q = qlc:q([Rel ||
+			      #edist_release{name=Rel} 
+				  <- mnesia:table(edist_releases)]),
+		Releases = qlc:e(Q),
+
+		UpdatedClient = Client#client{joined=true, facts=Facts}, 
 		mnesia:write(edist_controller_clients, UpdatedClient, write),
 		gen_event:notify({global, edist_event_bus},
 				 {agent_join, Cookie, Facts}),
-		{ok, Vsn}
+		{ok, Releases}
 	end,
     try mnesia:transaction(F) of
-	{atomic, {ok, Vsn}} ->
-	    {reply, {ok, Vsn}, State}
+	{atomic, {ok, Releases}} ->
+	    {reply, {ok, [{releases, Releases}]}, State}
     catch
 	_:Error ->
 	    {reply, Error, State}
     end;
 
-handle_call({client, download_release, Cookie}, {ClientPid, _Tag}, State) ->
+handle_call({client, subscribe_release, _Cookie, Rel}, {ClientPid, _}, State) ->
+    try
+	F = fun() ->
+		    [#edist_release{config=Config}]
+			= mnesia:read(edist_releases, Rel, read),
+		    #edist_release_vsn{vsn=Vsn} = find_latest_active(Rel),
+
+		    Props = [
+			     {vsn, Vsn},
+			     {config, Config}
+			    ],
+		    {ok, Props}
+	    end,
+	{atomic, {ok, Props}} = mnesia:transaction(F),
+
+	Module = subscriber,
+	StartFunc = {Module, start_link, [Rel, ClientPid]},
+	
+	{ok, Pid} = edist_controller_sup:start_child({erlang:now(),
+						      StartFunc,
+						      transient,
+						      brutal_kill,
+						      worker,
+						      [Module]
+						     }
+						    ),
+	{reply, {ok, Props, Pid}, State}
+    catch
+	_:Error ->
+	    {reply, {error, Error}, State}
+    end;
+
+handle_call({client, download_release, Cookie, Rel}, {ClientPid, _Tag}, State) ->
     try
 	F = fun() ->
 		    [Client]
 			= mnesia:read(edist_controller_clients, Cookie, read),
-		    [#edist_release{config=Config}]
-			= mnesia:read(edist_releases, Client#client.rel, read),
 
-		    Version = find_latest_active(Client#client.rel),
-		    {Client, Config, Version}
+		    Version = find_latest_active(Rel),
+		    {Client, Version}
 	    end,
-	{atomic, {Client, Config, Version}} = mnesia:transaction(F),
+	{atomic, {Client, Version}} = mnesia:transaction(F),
 
 	% perform a parallel search for any elements with matching criteria
 	Parent = self(),
@@ -292,7 +314,7 @@ handle_call({client, download_release, Cookie}, {ClientPid, _Tag}, State) ->
 		throw("Matching criteria not found");
 	    Element ->
 		StartFunc = {release_output_device, start_link,
-			     [Client#client.rel, Version, Element, ClientPid]},
+			     [Rel, Version, Element, ClientPid]},
 		
 		{ok, Dev} = edist_controller_sup:start_child({erlang:now(),
 							      StartFunc,
@@ -303,7 +325,7 @@ handle_call({client, download_release, Cookie}, {ClientPid, _Tag}, State) ->
 							     }
 							    ),
 
-		{reply, {ok, Version#edist_release_vsn.vsn, Config, Dev}, State}
+		{reply, {ok, Version#edist_release_vsn.vsn, Dev}, State}
 	end
     catch
 	_:Error ->
@@ -348,10 +370,11 @@ handle_info({'DOWN', Ref, process, Pid, _Info}, State) ->
     F = fun() ->
 		DelClient =
 		    fun(Client) ->
+			    mnesia:delete_object(Tab, Client, write),
+
 			    gen_event:notify({global, edist_event_bus},
 					     {agent_leave,
-					      Client#client.cookie}),
-			    mnesia:delete_object(Tab, Client, write)
+					      Client#client.cookie})
 		    end,
 
 		Q = qlc:q([ DelClient(Client)

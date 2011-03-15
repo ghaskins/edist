@@ -4,7 +4,7 @@
 -module(edist_agent_sup).
 -behaviour(supervisor).
 
--export([start_link/1, start_child/1]).
+-export([start_link/1, start_child/1, delete_child/1]).
 
 %% --------------------------------------------------------------------
 %% Internal exports
@@ -21,15 +21,19 @@ start_link(Args) ->
 start_child(ChildSpec) ->
     supervisor:start_child(?MODULE, ChildSpec).
 
-init([Rel, Path]) ->
+delete_child(Id) ->
+    ok = supervisor:terminate_child(?MODULE, Id),
+    ok = supervisor:delete_child(?MODULE, Id).
+    
+init([Path]) ->
     {ok,{{one_for_all,0,1},
 	 [
 	  {'edist-agent',
 	   {edist_agent,start_link,[]},
 	   permanent, 2000, worker,[edist_agent]},
-	  {'edist-release',
-	   {release_fsm,start_link,[Rel, Path]},
-	   permanent, 2000, worker,[release_fsm]},
+	  {'edist-session',
+	   {session_fsm,start_link,[Path]},
+	   permanent, 2000, worker,[session_fsm]},
 	  {'edist-connection',
 	   {connection_fsm,start_link,[]},
 	   permanent, 2000, worker,[connection_fsm]}

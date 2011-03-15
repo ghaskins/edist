@@ -16,7 +16,7 @@ start(_Type, _StartArgs) ->
 	_ -> ok
     end,
 
-    RequiredArgs = [rel, path],
+    RequiredArgs = [path],
 
     lists:foldl(fun(Arg, _Acc) ->
                        case application:get_env(Arg) of
@@ -26,10 +26,9 @@ start(_Type, _StartArgs) ->
                end,
                void, RequiredArgs),
 
-    {ok, Rel} = application:get_env(rel),
     {ok, Path} = application:get_env(path),
 
-    edist_agent_sup:start_link([Rel, Path]).
+    edist_agent_sup:start_link([Path]).
 
 stop(_State) ->
     ok.

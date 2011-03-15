@@ -39,7 +39,6 @@
 	  <otpDependencies>
 	    <code>sasl</code>
 	  </otpDependencies>
-	  <skipDialyzer>true</skipDialyzer>
 	</configuration>
       </plugin>
     </plugins>

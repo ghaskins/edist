@@ -69,7 +69,7 @@ connect_controller(Tag, State) ->
 	    {Tag, connecting_controller, State#state{tmo_ref=TmoRef}};
 	Pid ->
 	    Ref = erlang:monitor(process, Pid),
-	    gen_fsm:send_event(release_fsm, {controller, connected, Pid}),
+	    gen_fsm:send_event(session_fsm, {controller, connected, Pid}),
 	    {Tag, connected, State#state{pid=Pid, ref=Ref}}
     end.
 
@@ -80,7 +80,7 @@ handle_sync_event(get_state, _From, StateName, State) ->
     {reply, {ok, disconnected}, StateName, State}.
 
 disconnect_controller(State) ->
-    gen_fsm:send_event(release_fsm, {controller, disconnected}),
+    gen_fsm:send_event(session_fsm, {controller, disconnected}),
     true = erlang:demonitor(State#state.ref, [flush]),
     State#state{pid=undefined, ref=undefined}.
 
