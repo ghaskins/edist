@@ -13,7 +13,7 @@ file:copy(IDev, ODev).
 file:close(IDev).
 edist_controller:close_stream(ODev).
 ok = edist_controller:commit_release(Name, Vsn, []).
-ok = edist_controller:create_group("default", matchall, ["client-release"], []).
+ok = edist_controller:create_group("default", matchall, [Name], []).
 
 
 ---------------------------------
