@@ -29,7 +29,7 @@ init([Rel, BasePath]) ->
 	    ok = filelib:ensure_dir(RuntimeDir)
     end,
 
-    ClientName = Name ++ "-" ++ Rel ++ "-client",
+    ClientName = Name ++ "-" ++ Rel,
     ClientNode = list_to_atom(ClientName ++ "@" ++ Host),
 
     % Ensure that the client is not already running
