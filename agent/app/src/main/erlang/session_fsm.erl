@@ -37,7 +37,7 @@ connected({update_releases, Releases}, State) ->
     {next_state, connected, update_releases(sets:from_list(Releases), State)};
 connected({controller, disconnected}, State) ->
     bcast_event({controller, disconnected}, State),
-    {next_state, reconnecting, State#state{cpid=undefined, session=undefined}}.
+    {next_state, connecting, State#state{cpid=undefined, session=undefined}}.
 
 handle_event(Event, _StateName, _State) ->
     throw({"Unexpected event", Event}).
