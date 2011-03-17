@@ -23,50 +23,18 @@ connecting({controller, connected, CPid}, State) ->
     {ok, Session} = controller_api:negotiate(CPid),
     {ok, Properties} = controller_api:join(Session, State#state.facts),
  
-    CurrentReleases = dict:fetch_keys(State#state.releases),
-
-    CurrentSet = sets:from_list(CurrentReleases),
     RequiredSet = case proplists:get_value(releases, Properties) of
 			   undefined -> [];
 			   V -> sets:from_list(V)
 		       end,
 
-    AddReleases = sets:to_list(sets:subtract(RequiredSet, CurrentSet)),
-    DropReleases = sets:to_list(sets:subtract(CurrentSet, RequiredSet)),
-
-    State1 = lists:foldl(fun(Rel, Acc) ->
-				 Id = list_to_atom(Rel),
-				 Module = release_fsm,
-
-				 BasePath = filename:join([State#state.path, "releases", Rel]),
-				 StartFunc = {Module, start_link, [Rel, BasePath]},
-				 
-				 {ok, Pid} = edist_agent_sup:start_child({Id,
-									  StartFunc,
-									  transient,
-									  brutal_kill,
-									  worker,
-									  [Module]
-									 }
-									),
-				 Release = #release{name=Rel, pid=Pid},
-				 Releases = dict:store(Rel, Release, Acc#state.releases),
-				 Acc#state{releases=Releases}
-			 end,
-			 State#state{cpid=CPid, session=Session},
-			 AddReleases),
-    State2 = lists:foldl(fun(Rel, Acc) ->
-				 Id = list_to_atom(Rel),
-				 ok = edist_agent_sup:delete_child(Id),
-
-				 Releases = dict:erase(Rel, Acc#state.releases),
-				 Acc#state{releases=Releases}
-			 end,
-			 State1,
-			 DropReleases),
-    bcast_event({controller, connected, Session}, State2),
+    State1 = State#state{cpid=CPid, session=Session},
+    bcast_event({controller, connected, Session}, State1),
+    {ok, State2} = update_releases(RequiredSet, State1),
     {next_state, connected, State2}.
 
+connected({update_releases, Releases}, State) ->
+    {next_state, connected, update_releases(sets:from_list(Releases), State)};
 connected({controller, disconnected}, State) ->
     bcast_event({controller, disconnected}, State),
     {next_state, reconnecting, State#state{cpid=undefined, session=undefined}}.
@@ -94,5 +62,47 @@ bcast_event(Event, State) ->
 		  end,
 		  dict:to_list(State#state.releases)).
     
+update_releases(RequiredSet, State) ->
+    CurrentReleases = dict:fetch_keys(State#state.releases),
+
+    CurrentSet = sets:from_list(CurrentReleases),
+
+    AddReleases = sets:to_list(sets:subtract(RequiredSet, CurrentSet)),
+    DropReleases = sets:to_list(sets:subtract(CurrentSet, RequiredSet)),
+
+    State1 = lists:foldl(fun(Rel, Acc) ->
+				 Id = list_to_atom(Rel),
+				 Module = release_fsm,
+
+				 BasePath = filename:join([State#state.path, "releases", Rel]),
+				 StartFunc = {Module, start_link,
+					      [Rel, BasePath, State#state.session]},
+				 
+				 {ok, Pid} = edist_agent_sup:start_child({Id,
+									  StartFunc,
+									  transient,
+									  brutal_kill,
+									  worker,
+									  [Module]
+									 }
+									),
+				 Release = #release{name=Rel, pid=Pid},
+				 Releases = dict:store(Rel, Release, Acc#state.releases),
+				 Acc#state{releases=Releases}
+			 end,
+			 State,
+			 AddReleases),
+    State2 = lists:foldl(fun(Rel, Acc) ->
+				 Id = list_to_atom(Rel),
+				 ok = edist_agent_sup:delete_child(Id),
+
+				 Releases = dict:erase(Rel, Acc#state.releases),
+				 Acc#state{releases=Releases}
+			 end,
+			 State1,
+			 DropReleases),
+
+    {ok, State2}.
+
 
 

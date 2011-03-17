@@ -1,6 +1,6 @@
 -module(release_fsm).
 -behavior(gen_fsm).
--export([init/1, start_link/2, handle_info/3, handle_event/3,
+-export([init/1, start_link/3, handle_info/3, handle_event/3,
 	 handle_sync_event/4, code_change/4, terminate/3]).
 -export([connecting/2, binding/2, disconnected_binding/2, upgrading_binding/2,
 	 running/2, reconnecting/2]).
@@ -12,10 +12,10 @@
 		tmoref
 	       }).
 
-start_link(Rel, BasePath) ->
-    gen_fsm:start_link({local, ?MODULE}, ?MODULE, [Rel, BasePath], []).
+start_link(Rel, BasePath, Session) ->
+    gen_fsm:start_link({local, ?MODULE}, ?MODULE, [Rel, BasePath, Session], []).
 
-init([Rel, BasePath]) ->
+init([Rel, BasePath, Session]) ->
     [Name, Host] = string:tokens(atom_to_list(node()), "@"),
 
     RuntimeDir = filename:join([BasePath, "runtime"]),
@@ -40,53 +40,12 @@ init([Rel, BasePath]) ->
 	    void
     end,
 
-    {ok, connecting, #state{rel=Rel, path=RuntimeDir, 
-			    cname=ClientName, cnode=ClientNode}}.
+    connect(Session, #state{rel=Rel, path=RuntimeDir, 
+			    cname=ClientName, cnode=ClientNode}).
 
 connecting({controller, connected, Session}, State) ->
-    TmpFile = tempfile(),
-
-    try
-	{ok, RelProps, SubId} =
-	    controller_api:subscribe_release(Session, State#state.rel),
-
-	Config = get_prop(config, RelProps),
-
-	{ok, Vsn, IDev} =
-	    controller_api:download_release(Session, State#state.rel),
-
-	ok = remote_copy(IDev, TmpFile),
-	
-	RelName = relname(State#state.rel, Vsn),
-	RuntimeDir = State#state.path,
-	ok = target_system:install(RelName, RuntimeDir, TmpFile),
-
-	BootFile = filename:join([RuntimeDir, "releases", Vsn, "start"]),
-	Cmd = filename:join([RuntimeDir, "bin", "erl"]) ++ 
-	    " -boot " ++ BootFile ++
-	    " -noinput" ++
-	    " -sname " ++ State#state.cname ++
-	    " " ++ Config,
-
-	error_logger:info_msg("Launching ~s~n", [Cmd]),
-
-	S = self(),
-	RPid = spawn_link(fun() ->
-				 Result = os_cmd:os_cmd(Cmd),
-				 gen_fsm:send_event(S, {release_stopped, Result})
-			 end),
-
-	NewState = State#state{session=Session, subid=SubId,
-			       vsn=Vsn, config=Config, rpid=RPid},
-	case bind(NewState) of
-	    true ->
-		{next_state, running, NewState};
-	    false ->
-		{next_state, binding, start_timer(500, NewState)}
-	end
-    after
-	ok = file:delete(TmpFile)
-    end.
+    {ok, NextStateName, NextState} = connect(Session, State), 
+    {next_state, NextStateName, NextState}.
 
 binding({release_stopped, _Data}, State) ->
     gen_fsm:cancel_timer(State#state.tmoref),
@@ -206,6 +165,51 @@ get_prop(Prop, Props) ->
     case proplists:get_value(Prop, Props) of
 	undefined -> throw({"Required property missing", Prop});
 	V -> V
+    end.
+
+connect(Session, State) ->
+    TmpFile = tempfile(),
+
+    try
+	{ok, RelProps, SubId} =
+	    controller_api:subscribe_release(Session, State#state.rel),
+
+	Config = get_prop(config, RelProps),
+
+	{ok, Vsn, IDev} =
+	    controller_api:download_release(Session, State#state.rel),
+
+	ok = remote_copy(IDev, TmpFile),
+	
+	RelName = relname(State#state.rel, Vsn),
+	RuntimeDir = State#state.path,
+	ok = target_system:install(RelName, RuntimeDir, TmpFile),
+
+	BootFile = filename:join([RuntimeDir, "releases", Vsn, "start"]),
+	Cmd = filename:join([RuntimeDir, "bin", "erl"]) ++ 
+	    " -boot " ++ BootFile ++
+	    " -noinput" ++
+	    " -sname " ++ State#state.cname ++
+	    " " ++ Config,
+
+	error_logger:info_msg("Launching ~s~n", [Cmd]),
+
+	S = self(),
+	RPid = spawn_link(fun() ->
+				 Result = os_cmd:os_cmd(Cmd),
+				 gen_fsm:send_event(S, {release_stopped, Result})
+			 end),
+
+	NewState = State#state{session=Session, subid=SubId,
+			       vsn=Vsn, config=Config, rpid=RPid},
+	case bind(NewState) of
+	    true ->
+		{ok, running, NewState};
+	    false ->
+		{ok, binding, start_timer(500, NewState)}
+	end
+    after
+	ok = file:delete(TmpFile)
     end.
 
 bind(State) ->

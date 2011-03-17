@@ -208,6 +208,24 @@ handle_call({create_group, Name, Criteria, Releases}, _From, State) ->
 				      [_] = mnesia:read(edist_releases, Rel, read)
 			      end,
 			      Releases),
+
+		Criterion = get_criterion(),
+		Q = qlc:q([Client || Client <- mnesia:table(edist_controller_clients)]),
+
+		% perform a parallel search for any existing clients that might
+		% match the criteria of the group being created
+		util:pmap(fun(#client{facts=Facts} = Client) ->
+				  case exec_criteria(Facts, Criteria) of
+				      match ->
+					  {ok, R} = find_matching_releases(Facts, Criterion),
+					  Client#client.pid ! {update_releases, R},
+					  ok;
+				      _ ->
+					  noop
+				  end,
+				  ok
+			  end,
+			  qlc:e(Q)),
 		ok
 	end,
     try mnesia:transaction(F) of
@@ -248,28 +266,14 @@ handle_call({client, join, Cookie, Facts}, _From, State) ->
 		    true -> ok
 		end,
 
-		% perform a parallel search against all registered groups
-		% looking for any matches.  Any releases assigned to the
-		% group are then assigned to the client
-		Q = qlc:q([{G#edist_group.criteria, G}
-			   || G <- mnesia:table(edist_groups)]),
-		Criterion = qlc:e(Q),
-		Releases
-		    = lists:foldl(fun({match, Group}, Acc) ->
-					  R = Group#edist_group.releases,
-					  sets:union(Acc, sets:from_list(R));
-				      (_, Acc) ->
-					  Acc
-				  end,
-				  sets:new(),
-				  process_criterion(Facts, Criterion)
-				 ),
+		Criterion = get_criterion(),
+		{ok, Releases} = find_matching_releases(Facts, Criterion),
 
-		UpdatedClient = Client#client{joined=true, facts=Facts}, 
+		UpdatedClient = Client#client{joined=true, facts=Facts},
 		mnesia:write(edist_controller_clients, UpdatedClient, write),
 		gen_event:notify({global, edist_event_bus},
 				 {agent_join, Cookie, Facts}),
-		{ok, sets:to_list(Releases)}
+		{ok, Releases}
 	end,
     try mnesia:transaction(F) of
 	{atomic, {ok, Releases}} ->
@@ -528,30 +532,39 @@ rm_version(Name, Vsn) ->
 active_vsn(Vsn) ->
     Vsn#edist_release_vsn.state =:= active.
 
+exec_criteria(Facts, Criteria) ->
+    % FIXME: We are JIT'ing the criteria, might want to 
+    % precompile/cache somehow
+    {ok, Fun} = util:compile_native(Criteria),
+    Fun(Facts).
+
 process_criterion(Facts, Criterion) ->
     % perform a parallel search for any elements with matching criteria   
-    Parent = self(),
-    Work = fun({Criteria, Cookie}) ->
-		   % FIXME: We are JIT'ing the criteria, might want to 
-		   % precompile/cache somehow
-		   {ok, Fun} = util:compile_native(Criteria),
-		   Result = try Fun(Facts) of
-				match -> {match, Cookie};
-				nomatch -> {nomatch, Cookie}
-			    catch
-				_:Error -> {exception, Error}
-			    end,
-		   
-		   Parent ! {criteria, self(), Result}
-	   end,
-    
-    Pids = [spawn_link(fun() -> Work(Criteria) end)
-	    || Criteria <- Criterion],
-    
-    lists:map(fun(Pid) ->
-		      receive
-			  {criteria, Pid, {exception, Error}} -> throw(Error);
-			  {criteria, Pid, Result} -> Result
+    util:pmap(fun({Criteria, Cookie}) ->
+		      case exec_criteria(Facts, Criteria) of
+			  match -> {match, Cookie};
+			  nomatch -> {nomatch, Cookie}
 		      end
 	      end,
-	      Pids).
+	      Criterion).
+
+get_criterion() ->
+    Q = qlc:q([{G#edist_group.criteria, G}
+	       || G <- mnesia:table(edist_groups)]),
+    qlc:e(Q).
+
+find_matching_releases(Facts, Criterion) ->
+    % perform a parallel search against all registered groups
+    % looking for any matches.  Any releases assigned to the
+    % group are then assigned to the client
+
+    Releases = lists:foldl(fun({match, Group}, Acc) ->
+				   R = Group#edist_group.releases,
+				   sets:union(Acc, sets:from_list(R));
+			      (_, Acc) ->
+				   Acc
+			   end,
+			   sets:new(),
+			   process_criterion(Facts, Criterion)
+			  ),
+    {ok, sets:to_list(Releases)}.
