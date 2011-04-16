@@ -183,8 +183,7 @@ handle_call({commit_release, Name, Vsn}, _From, State) ->
 					       throw({"bad state", Version})
 				       end
 			       end),
-		gen_event:notify({global, edist_event_bus},
-				 {release_update, Name, Vsn}),
+		edist_event_bus:notify(edist_releases, {update, Name, Vsn}),
 		ok
 	end,
     try mnesia:transaction(F) of
@@ -271,8 +270,7 @@ handle_call({client, join, Cookie, Facts}, _From, State) ->
 
 		UpdatedClient = Client#client{joined=true, facts=Facts},
 		mnesia:write(edist_controller_clients, UpdatedClient, write),
-		gen_event:notify({global, edist_event_bus},
-				 {agent_join, Cookie, Facts}),
+		edist_event_bus:notify(edist_agents, {join, Cookie, Facts}),
 		{ok, Releases}
 	end,
     try mnesia:transaction(F) of
@@ -403,9 +401,8 @@ handle_info({'DOWN', Ref, process, Pid, _Info}, State) ->
 		    fun(Client) ->
 			    mnesia:delete_object(Tab, Client, write),
 
-			    gen_event:notify({global, edist_event_bus},
-					     {agent_leave,
-					      Client#client.cookie})
+			    edist_event_bus:notify(edist_agents,
+					     {leave, Client#client.cookie})
 		    end,
 
 		Q = qlc:q([ DelClient(Client)

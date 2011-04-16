@@ -18,10 +18,7 @@ start(_Type, _StartArgs) ->
 		_:_ -> [node()]
 	    end,
 		
-    {ok, Pid} = edist_controller_sup:start_link(Nodes),
-    gen_event:add_handler({global, edist_event_bus}, event_logger, []),
-
-    {ok, Pid}.
+    edist_controller_sup:start_link(Nodes).
 
 stop(_State) ->
     ok.

@@ -217,8 +217,8 @@ bind(State) ->
     case net_adm:ping(State#state.cnode) of
 	pong ->
 	    error_logger:info_msg("Binding complete~n", []),
-	    gen_event:notify({global, edist_event_bus},
-			     {online, State#state.cnode}),
+	    edist_event_bus:notify(edist_agents,
+				   {online, State#state.cnode}),
 	    true;
 	_ ->
 	    false

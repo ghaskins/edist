@@ -6,6 +6,21 @@
   <version>0.1-SNAPSHOT</version>
   <packaging>erlang-otp</packaging>
 
+  <dependencies>
+    <dependency>
+      <groupId>com.github.esl</groupId>
+      <artifactId>gproc</artifactId>
+      <version>0.1.2</version>
+      <type>erlang-otp</type>
+    </dependency>
+    <dependency>
+      <groupId>com.github.abecciu.revival</groupId>
+      <artifactId>gen_leader</artifactId>
+      <version>1.0</version>
+      <type>erlang-otp</type>
+    </dependency>
+  </dependencies>
+
   <build>
     <plugins>
       <plugin>
