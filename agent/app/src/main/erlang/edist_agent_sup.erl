@@ -26,7 +26,7 @@ delete_child(Id) ->
     ok = supervisor:delete_child(?MODULE, Id).
     
 init([Path]) ->
-    {ok,{{one_for_all,0,1},
+    {ok,{{one_for_one,1,60},
 	 [
 	  {'edist-agent',
 	   {edist_agent,start_link,[]},

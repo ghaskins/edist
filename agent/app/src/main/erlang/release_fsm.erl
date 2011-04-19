@@ -49,7 +49,7 @@ connecting({controller, connected, Session}, State) ->
 
 binding({release_stopped, _Data}, State) ->
     gen_fsm:cancel_timer(State#state.tmoref),
-    {stop, normal, State};
+    {stop, "Subordinate death", State};
 binding({timeout, _, bind}, State) ->
     case bind(State) of
 	true ->
@@ -69,7 +69,7 @@ binding({controller, disconnected}, State) ->
 
 disconnected_binding({release_stopped, _Data}, State) ->
     gen_fsm:cancel_timer(State#state.tmoref),
-    {stop, normal, State};
+    {stop, "Subordinate death", State};
 disconnected_binding({timeout, _, bind}, State) ->
     case bind(State) of
 	true ->
@@ -93,7 +93,7 @@ disconnected_binding({controller, connected, Session}, State) ->
 
 upgrading_binding({release_stopped, _Data}, State) ->
     gen_fsm:cancel_timer(State#state.tmoref),
-    {stop, normal, State};
+    {stop, "Subordinate death", State};
 upgrading_binding({timeout, _, bind}, State) ->
     case bind(State) of
 	true ->
@@ -106,7 +106,7 @@ upgrading_binding({controller, disconnected}, State) ->
      State#state{session=undefined, subid=undefined}}.
 
 running({release_stopped, _Data}, State) ->
-    {stop, normal, State};
+    {stop, "Subordinate death", State};
 running({hotupdate, Vsn}, State) ->
     if
 	Vsn =/= State#state.vsn ->
@@ -118,7 +118,7 @@ running({controller, disconnected}, State) ->
     {next_state, reconnecting, State#state{session=undefined, subid=undefined}}.
 
 reconnecting({release_stopped, _Data}, State) ->
-    {stop, normal, State};
+    {stop, "Subordinate death", State};
 reconnecting({controller, connected, Session}, State) ->
     {ok, RelProps, SubId} =
 	controller_api:subscribe_release(Session, State#state.rel),
