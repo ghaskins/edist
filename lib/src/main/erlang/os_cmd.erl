@@ -28,9 +28,9 @@ os_cmd(Cmd, ExpectedStatus, Verbose) ->
         {ok, ExpectedStatus, Data} ->
             Data;
         {ok, UnexpectedStatus, Data} ->
-            throw({badstatus, {{status, UnexpectedStatus},
+            throw({badstatus, [{status, UnexpectedStatus},
                                {cmd, Cmd},
-                               {data, Data}}})
+                               {data, Data}]})
     end.
 
 cmd_receive(Port, Acc, Verbose) ->

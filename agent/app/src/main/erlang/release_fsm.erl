@@ -196,7 +196,11 @@ connect(Session, State) ->
 
 	S = self(),
 	RPid = spawn_link(fun() ->
-				 Result = os_cmd:os_cmd(Cmd),
+				 Result = try os_cmd:os_cmd(Cmd)
+					  catch
+					      throw:{badstatus, Status} ->
+						  proplists:get_value(status, Status)
+					  end,
 				 gen_fsm:send_event(S, {release_stopped, Result})
 			 end),
 
