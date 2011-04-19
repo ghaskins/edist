@@ -216,7 +216,7 @@ handle_call({create_group, Name, Criteria, Releases}, _From, State) ->
 		% perform a parallel search for any existing clients that might
 		% match the criteria of the group being created
 		util:pmap(fun(Pid) ->
-				  Facts = get_facts(Pid),
+				  {ok, Facts} = get_facts(Pid),
 				  case exec_criteria(Facts, Criteria) of
 				      match ->
 					  {ok, R} = find_matching_releases(Facts, Criterion),
@@ -258,7 +258,7 @@ handle_call({client, join, Cookie}, _From, State) ->
 		[Client] = mnesia:read(edist_controller_clients,
 				       Cookie,
 				       write),
-		Facts = get_facts(Client#client.pid),
+		{ok, Facts} = get_facts(Client#client.pid),
 
 		error_logger:info_msg("Client ~p: JOIN with facts ~p~n",
 				      [Cookie, Facts]),
@@ -331,7 +331,7 @@ handle_call({client, download_release, Cookie, Rel}, {ClientPid, _Tag}, State) -
 	Criterion = [{Element#edist_release_elem.criteria, Element}
 		     || Element <- Version#edist_release_vsn.elements],
 
-	Facts = get_facts(Client#client.pid),
+	{ok, Facts} = get_facts(Client#client.pid),
 	Results = process_criterion(Facts, Criterion),
 
 	% grab the first matching reply since the list is in prio order
