@@ -28,26 +28,31 @@ api_version() -> 1.
 %% External functions
 %% ====================================================================
 start_link(Nodes) ->
-    gen_server:start_link({global, ?MODULE}, ?MODULE, [Nodes], []).
+    gen_server:start_link(?MODULE, [Nodes], []).
 
 create_release(Name, InitialVsn, Config, []) ->
-    gen_server:call({global, ?MODULE}, {create_release, Name, InitialVsn, Config}).
+    gen_server:call(controller_pid(), {create_release, Name, InitialVsn, Config}).
 
 create_update(Name, NextVsn, []) ->
-    gen_server:call({global, ?MODULE}, {create_update, Name, NextVsn}).
+    gen_server:call(controller_pid(), {create_update, Name, NextVsn}).
 
 upload_release(Name, Vsn, Criteria, []) ->
-    gen_server:call({global, ?MODULE}, {upload_release, Name, Vsn, Criteria}).
+    gen_server:call(controller_pid(), {upload_release, Name, Vsn, Criteria}).
 
 commit_release(Name, Vsn, []) ->
-    gen_server:call({global, ?MODULE}, {commit_release, Name, Vsn}).
+    gen_server:call(controller_pid(), {commit_release, Name, Vsn}).
 
 close_stream(IoDevice) ->
     gen_server:call(IoDevice, close).
 
 create_group(Name, Criteria, Releases, []) ->
-    gen_server:call({global, ?MODULE},
+    gen_server:call(controller_pid(),
 		    {create_group, Name, Criteria, Releases}).
+
+-define(PROCESS_NAME, {n, g, edist_controller}).
+
+controller_pid() ->
+    gproc:lookup_pid(?PROCESS_NAME).
 
 %% ====================================================================
 %% Server functions
@@ -92,6 +97,8 @@ init([Nodes]) ->
 		ok
 	end,
     {atomic, ok} = mnesia:transaction(F),
+
+    true = gproc:reg(?PROCESS_NAME),
 
     {ok, #state{}}.
 

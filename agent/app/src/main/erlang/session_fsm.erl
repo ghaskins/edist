@@ -23,9 +23,12 @@ init([Path]) ->
     gproc:mreg(p, g, Props),
     gproc:reg({p, g, edist_client}),
  
+    connect(),
     {ok, connecting, #state{path=Path}}.
 
-connecting({controller, connected, CPid}, State) ->
+connecting({connected, CPid}, State) ->
+    erlang:monitor(process, CPid),
+
     {ok, Session} = controller_api:negotiate(CPid),
     {ok, Properties} = controller_api:join(Session),
  
@@ -41,8 +44,9 @@ connecting({controller, connected, CPid}, State) ->
 
 connected({update_releases, Releases}, State) ->
     {next_state, connected, update_releases(sets:from_list(Releases), State)};
-connected({controller, disconnected}, State) ->
+connected({'DOWN', _Ref, process, Pid, _Info}, State) when Pid =:= State#state.cpid ->
     bcast_event({controller, disconnected}, State),
+    connect(),
     {next_state, connecting, State#state{cpid=undefined, session=undefined}}.
 
 handle_event(Event, _StateName, _State) ->
@@ -51,6 +55,9 @@ handle_event(Event, _StateName, _State) ->
 handle_sync_event(_Event, _From, StateName, State) ->
     {reply, {error, einval}, StateName, State}.
 
+handle_info({gproc, _Ref, registered, {edist_controller, CPid, _Value}}, StateName, State) ->
+    send_connected(CPid),
+    {next_state, StateName, State};
 handle_info(Info, StateName, State) ->
     gen_fsm:send_event(self(), Info),
     {next_state, StateName, State}.
@@ -110,5 +117,14 @@ update_releases(RequiredSet, State) ->
 
     {ok, State2}.
 
+connect() ->
+    case gproc:nb_wait({n, g, edist_controller}) of
+	{_Ref, {{n, g, edist_controller}, Pid, _}} ->
+	    send_connected(Pid);
+	_Ref ->
+	    ok
+    end.
 
+send_connected(CPid) ->
+    gen_fsm:send_event(self(), {connected, CPid}).
 

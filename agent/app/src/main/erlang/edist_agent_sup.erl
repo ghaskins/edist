@@ -33,10 +33,7 @@ init([Path]) ->
 	   permanent, 2000, worker,[edist_agent]},
 	  {'edist-session',
 	   {session_fsm,start_link,[Path]},
-	   permanent, 2000, worker,[session_fsm]},
-	  {'edist-connection',
-	   {connection_fsm,start_link,[]},
-	   permanent, 2000, worker,[connection_fsm]}
+	   permanent, 2000, worker,[session_fsm]}
 	 ]
 	}
     }.
