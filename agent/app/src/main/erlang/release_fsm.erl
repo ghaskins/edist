@@ -216,6 +216,14 @@ bind(State) ->
     error_logger:info_msg("Binding to ~p....~n", [State#state.cnode]), 
     case net_adm:ping(State#state.cnode) of
 	pong ->
+	    % inject our subagent code into the target
+	    {subagent, Binary, FileName} = code:get_object_code(subagent),
+	    {module, subagent} =
+		rpc:call(State#state.cnode, code, load_binary,
+			 [subagent, FileName, Binary]),
+	    {ok, Pid} =
+		rpc:call(State#state.cnode, subagent, start_link, [self()]),
+	    	
 	    error_logger:info_msg("Binding complete~n", []),
 	    edist_event_bus:notify(edist_agents,
 				   {online, State#state.cnode}),
