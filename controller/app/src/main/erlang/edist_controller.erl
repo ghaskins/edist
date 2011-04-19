@@ -17,7 +17,7 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--record(client, {cookie, pid, ref, joined=false, facts}).
+-record(client, {cookie, pid, ref, joined=false}).
 -record(state, {}).
 
 -define(RECORD(R), {R, record_info(fields, R)}).
@@ -209,15 +209,18 @@ handle_call({create_group, Name, Criteria, Releases}, _From, State) ->
 			      Releases),
 
 		Criterion = get_criterion(),
-		Q = qlc:q([Client || Client <- mnesia:table(edist_controller_clients)]),
+		Q = qlc:q([Pid || 
+			      {{p, g, edist_client}, Pid, '_'}
+				  <- gproc:table(props)]),
 
 		% perform a parallel search for any existing clients that might
 		% match the criteria of the group being created
-		util:pmap(fun(#client{facts=Facts} = Client) ->
+		util:pmap(fun(Pid) ->
+				  Facts = get_facts(Pid),
 				  case exec_criteria(Facts, Criteria) of
 				      match ->
 					  {ok, R} = find_matching_releases(Facts, Criterion),
-					  Client#client.pid ! {update_releases, R},
+					  Pid ! {update_releases, R},
 					  ok;
 				      _ ->
 					  noop
@@ -235,13 +238,12 @@ handle_call({create_group, Name, Criteria, Releases}, _From, State) ->
 	    {reply, {error, Error}, State}
     end;
 
-
-handle_call({client, negotiate, ApiVsn, Args}, {Pid,_Tag}, State) ->
-    ApiVsn = api_version(),
+handle_call({client, negotiate, RemoteApiVsn, Args}, {Pid,_Tag}, State) ->
+    OurApiVsn = api_version(),
     Cookie = erlang:now(),
 
     error_logger:info_msg("Client ~p(~p): NEGOTIATE with Api: ~p Options: ~p~n",
-			   [Cookie, Pid, ApiVsn, Args]),
+			   [Cookie, Pid, RemoteApiVsn, Args]),
     
     F = fun() ->
 		Ref = erlang:monitor(process, Pid),
@@ -249,16 +251,18 @@ handle_call({client, negotiate, ApiVsn, Args}, {Pid,_Tag}, State) ->
 		mnesia:write(edist_controller_clients, Client, write)
 	end,
     {atomic, ok} = mnesia:transaction(F),
-    {reply, {ok, ApiVsn, [], Cookie}, State};
+    {reply, {ok, OurApiVsn, [], Cookie}, State};
 
-handle_call({client, join, Cookie, Facts}, _From, State) ->
-    error_logger:info_msg("Client ~p: JOIN with facts ~p~n",
-			   [Cookie, Facts]),
-    
+handle_call({client, join, Cookie}, _From, State) ->
     F = fun() ->
 		[Client] = mnesia:read(edist_controller_clients,
 				       Cookie,
 				       write),
+		Facts = get_facts(Client#client.pid),
+
+		error_logger:info_msg("Client ~p: JOIN with facts ~p~n",
+				      [Cookie, Facts]),
+    
 		if
 		    Client#client.joined =:= true ->
 			throw("Already joined");
@@ -268,7 +272,7 @@ handle_call({client, join, Cookie, Facts}, _From, State) ->
 		Criterion = get_criterion(),
 		{ok, Releases} = find_matching_releases(Facts, Criterion),
 
-		UpdatedClient = Client#client{joined=true, facts=Facts},
+		UpdatedClient = Client#client{joined=true},
 		mnesia:write(edist_controller_clients, UpdatedClient, write),
 		edist_event_bus:notify(edist_agents, {join, Cookie, Facts}),
 		{ok, Releases}
@@ -327,7 +331,8 @@ handle_call({client, download_release, Cookie, Rel}, {ClientPid, _Tag}, State) -
 	Criterion = [{Element#edist_release_elem.criteria, Element}
 		     || Element <- Version#edist_release_vsn.elements],
 
-	Results = process_criterion(Client#client.facts, Criterion),
+	Facts = get_facts(Client#client.pid),
+	Results = process_criterion(Facts, Criterion),
 
 	% grab the first matching reply since the list is in prio order
 	case lists:foldl(fun({nomatch, _}, nomatch) ->
@@ -565,3 +570,11 @@ find_matching_releases(Facts, Criterion) ->
 			   process_criterion(Facts, Criterion)
 			  ),
     {ok, sets:to_list(Releases)}.
+
+get_facts(Pid) ->
+    Q = qlc:q([{Fact, Value} ||
+		  {{p, g, {edist_fact, Fact}}, P, Value} <- gproc:table(props),
+		  P =:= Pid
+	      ]),
+    {ok, qlc:e(Q)}.
+				

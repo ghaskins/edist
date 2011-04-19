@@ -7,21 +7,27 @@
 -include_lib("kernel/include/file.hrl").
 
 -record(release, {name, pid}).
--record(state, {path, facts, releases=dict:new(), cpid, session}).
+-record(state, {path, releases=dict:new(), cpid, session}).
 
 start_link(Path) ->
     gen_fsm:start_link({local, ?MODULE}, ?MODULE, [Path], []).
 
 init([Path]) ->
-    Facts = facter:get_facts(),
-
+    Facts = facter:get_facts() ++
+	[
+	 {"api_version", controller_api:api_version()}
+	],
     error_logger:info_msg("Starting with facts: ~p~n", [Facts]),
+
+    Props = [{{edist_fact, K}, V} || {K, V} <- Facts],
+    gproc:mreg(p, g, Props),
+    gproc:reg({p, g, edist_client}),
  
-    {ok, connecting, #state{path=Path, facts=Facts}}.
+    {ok, connecting, #state{path=Path}}.
 
 connecting({controller, connected, CPid}, State) ->
     {ok, Session} = controller_api:negotiate(CPid),
-    {ok, Properties} = controller_api:join(Session, State#state.facts),
+    {ok, Properties} = controller_api:join(Session),
  
     RequiredSet = case proplists:get_value(releases, Properties) of
 			   undefined -> [];
