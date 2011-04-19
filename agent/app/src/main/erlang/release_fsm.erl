@@ -220,14 +220,20 @@ bind(State) ->
     error_logger:info_msg("Binding to ~p....~n", [State#state.cnode]), 
     case net_adm:ping(State#state.cnode) of
 	pong ->
-	    % inject our subagent code into the target
-	    {subagent, Binary, FileName} = code:get_object_code(subagent),
-	    {module, subagent} =
-		rpc:call(State#state.cnode, code, load_binary,
-			 [subagent, FileName, Binary]),
-	    {ok, Pid} =
-		rpc:call(State#state.cnode, subagent, start_link, [self()]),
-	    	
+	    S = self(),
+	    spawn(
+	      State#state.cnode,
+	      fun() ->
+		      erlang:monitor(process, S),
+		      receive
+			  {'DOWN', _Ref, process, S, _Info} ->
+			      ok
+		      end,
+		      error_logger:info_msg("EDIST: Lost connection~n", []),
+		      init:stop()
+	      end
+	     ),
+	    	    	
 	    error_logger:info_msg("Binding complete~n", []),
 	    edist_event_bus:notify(edist_agents,
 				   {online, State#state.cnode}),
