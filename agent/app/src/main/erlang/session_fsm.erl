@@ -27,6 +27,7 @@ init([Path]) ->
     {ok, connecting, #state{path=Path}}.
 
 connecting({connected, CPid}, State) ->
+    error_logger:info_msg("Connected to ~p~n", [CPid]),
     erlang:monitor(process, CPid),
     gproc_dist:sync(),
     
@@ -46,6 +47,7 @@ connecting({connected, CPid}, State) ->
 connected({update_releases, Releases}, State) ->
     {next_state, connected, update_releases(sets:from_list(Releases), State)};
 connected({'DOWN', _Ref, process, Pid, _Info}, State) when Pid =:= State#state.cpid ->
+    error_logger:info_msg("Disconnected~n", []),
     bcast_event({controller, disconnected}, State),
     connect(),
     {next_state, connecting, State#state{cpid=undefined, session=undefined}}.
@@ -121,8 +123,10 @@ update_releases(RequiredSet, State) ->
 connect() ->
     case gproc:nb_wait({n, g, edist_controller}) of
 	{_Ref, {{n, g, edist_controller}, Pid, _}} ->
+	    error_logger:info_msg("Instant connect~n", []),
 	    send_connected(Pid);
 	_Ref ->
+	    error_logger:info_msg("Deferred connect~n", []),
 	    ok
     end.
 
