@@ -7,7 +7,8 @@
 
 -include_lib("kernel/include/file.hrl").
 
--record(state, {rel, vsn, path, config,
+-record(paths, {base, runtime}).
+-record(state, {rel, vsn, paths, config,
 		cname, cnode, session, subid, rpid,
 		tmoref
 	       }).
@@ -40,7 +41,8 @@ init([Rel, BasePath, Session]) ->
 	    void
     end,
 
-    connect(Session, #state{rel=Rel, path=RuntimeDir, 
+    connect(Session, #state{rel=Rel,
+			    paths=#paths{base=BasePath, runtime=RuntimeDir}, 
 			    cname=ClientName, cnode=ClientNode}).
 
 connecting({controller, connected, Session}, State) ->
@@ -168,52 +170,48 @@ get_prop(Prop, Props) ->
     end.
 
 connect(Session, State) ->
-    TmpFile = tempfile(),
-
-    try
-	{ok, RelProps, SubId} =
-	    controller_api:subscribe_release(Session, State#state.rel),
-
-	Config = get_prop(config, RelProps),
-
-	{ok, Vsn, IDev} =
-	    controller_api:download_release(Session, State#state.rel),
-
-	ok = remote_copy(IDev, TmpFile),
-	
-	RelName = relname(State#state.rel, Vsn),
-	RuntimeDir = State#state.path,
-	ok = target_system:install(RelName, RuntimeDir, TmpFile),
-
-	BootFile = filename:join([RuntimeDir, "releases", Vsn, "start"]),
-	Cmd = filename:join([RuntimeDir, "bin", "erl"]) ++ 
-	    " -boot " ++ BootFile ++
-	    " -noinput" ++
-	    " -sname " ++ State#state.cname ++
-	    " " ++ Config,
-
-	error_logger:info_msg("Launching ~s~n", [Cmd]),
-
-	S = self(),
-	RPid = spawn_link(fun() ->
-				 Result = try os_cmd:os_cmd(Cmd)
-					  catch
-					      throw:{badstatus, Status} ->
-						  proplists:get_value(status, Status)
-					  end,
-				 gen_fsm:send_event(S, {release_stopped, Result})
-			 end),
-
-	NewState = State#state{session=Session, subid=SubId,
-			       vsn=Vsn, config=Config, rpid=RPid},
-	case bind(NewState) of
-	    true ->
-		{ok, running, NewState};
-	    false ->
-		{ok, binding, start_timer(500, NewState)}
-	end
-    after
-	ok = file:delete(TmpFile)
+    {ok, RelProps, SubId} =
+	controller_api:subscribe_release(Session, State#state.rel),
+    
+    Config = get_prop(config, RelProps),
+    
+    {ok, Vsn, IDev} =
+	controller_api:download_release(Session, State#state.rel),
+    
+    ImageFile = filename:join([State#state.paths#paths.base,
+				"image.cache"]),
+    ok = remote_copy(IDev, ImageFile),
+    
+    RelName = relname(State#state.rel, Vsn),
+    RuntimeDir = State#state.paths#paths.runtime,
+    ok = target_system:install(RelName, RuntimeDir, ImageFile),
+    
+    BootFile = filename:join([RuntimeDir, "releases", Vsn, "start"]),
+    Cmd = filename:join([RuntimeDir, "bin", "erl"]) ++ 
+	" -boot " ++ BootFile ++
+	" -noinput" ++
+	" -sname " ++ State#state.cname ++
+	" " ++ Config,
+    
+    error_logger:info_msg("Launching ~s~n", [Cmd]),
+    
+    S = self(),
+    RPid = spawn_link(fun() ->
+			      Result = try os_cmd:os_cmd(Cmd)
+				       catch
+					   throw:{badstatus, Status} ->
+					       proplists:get_value(status, Status)
+				       end,
+			      gen_fsm:send_event(S, {release_stopped, Result})
+		      end),
+    
+    NewState = State#state{session=Session, subid=SubId,
+			   vsn=Vsn, config=Config, rpid=RPid},
+    case bind(NewState) of
+	true ->
+	    {ok, running, NewState};
+	false ->
+	    {ok, binding, start_timer(500, NewState)}
     end.
 
 bind(State) ->
