@@ -10,7 +10,7 @@
     <dependency>
       <groupId>com.github.esl</groupId>
       <artifactId>gproc</artifactId>
-      <version>0.2.3</version>
+      <version>0.2.5</version>
       <type>erlang-otp</type>
     </dependency>
     <dependency>
