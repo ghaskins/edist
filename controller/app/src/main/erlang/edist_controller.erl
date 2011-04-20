@@ -582,7 +582,7 @@ find_matching_releases(Facts, Criterion) ->
 get_facts(Pid) ->
     Q = qlc:q([{Fact, Value} ||
 		  {{p, g, {edist_fact, Fact}}, P, Value} <- gproc:table(props),
-		  P == Pid
+		  P =:= Pid
 	      ]),
     {ok, qlc:e(Q)}.
 				
