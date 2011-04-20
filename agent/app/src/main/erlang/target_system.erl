@@ -7,7 +7,6 @@
 %% http://www.erlang.org/doc/system_principles/create_target.html#id59337
 
 install(App, RootDir, TarFile) ->
-    io:fwrite("Extracting ~s ...~n", [TarFile]),
     ok = extract_tar(TarFile, RootDir),
     RelFile = filename:join([RootDir, "releases", App ++ ".rel"]),
     {ok, [{release, {_Name, _Vsn}, {erts, ErtsVsn}, _Apps}]}
@@ -41,12 +40,9 @@ install(App, RootDir, TarFile) ->
 	    ok
     end,
 
-    io:fwrite("Substituting in erl.src, start.src and start_erl.src to\n"
-              "form erl, start and start_erl ...\n"),
     subst_src_scripts(["erl", "start", "start_erl"], ErtsBinDir, BinDir, 
                       [{"FINAL_ROOTDIR", RootDir}, {"EMU", "beam"}],
                       [preserve]),
-    io:fwrite("Creating the RELEASES file ...\n"),
     create_RELEASES(RootDir, 
                     filename:join([RootDir, "releases", App])).
 
