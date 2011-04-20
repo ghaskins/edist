@@ -367,7 +367,10 @@ handle_call({client, download_release, Cookie, Rel}, {ClientPid, _Tag}, State) -
 							     }
 							    ),
 
-		{reply, {ok, Version#edist_release_vsn.vsn, Dev}, State}
+		Props = [
+			 {vsn, Version#edist_release_vsn.vsn}
+			],
+		{reply, {ok, Props, Dev}, State}
 	end
     catch
 	_:Error ->

@@ -175,9 +175,11 @@ connect(Session, State) ->
     
     Config = get_prop(config, RelProps),
     
-    {ok, Vsn, IDev} =
+    {ok, ImageProps, IDev} =
 	controller_api:download_release(Session, State#state.rel),
     
+    Vsn = get_prop(vsn, ImageProps),
+
     ImageFile = filename:join([State#state.paths#paths.base,
 				"image.cache"]),
     ok = remote_copy(IDev, ImageFile),
