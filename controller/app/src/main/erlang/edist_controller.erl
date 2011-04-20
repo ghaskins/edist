@@ -368,7 +368,8 @@ handle_call({client, download_release, Cookie, Rel}, {ClientPid, _Tag}, State) -
 							    ),
 
 		Props = [
-			 {vsn, Version#edist_release_vsn.vsn}
+			 {vsn, Version#edist_release_vsn.vsn},
+			 {sha, Element#edist_release_elem.sha}
 			],
 		{reply, {ok, Props, Dev}, State}
 	end

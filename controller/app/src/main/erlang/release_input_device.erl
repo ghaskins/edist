@@ -9,7 +9,7 @@
 
 -define(CHARS_PER_REC, 65536).
 
--record(state, {name, vsn, elem_id, position=0, buffer}).
+-record(state, {name, vsn, elem_id, position=0, buffer, sha_context}).
 
 start_link(Name, Vsn, Criteria) ->
     gen_server:start_link(?MODULE, {Name, Vsn, Criteria}, []).
@@ -40,7 +40,8 @@ init({Name, Vsn, Criteria}) ->
 	end,
     {atomic, ok} = mnesia:transaction(F),
 
-    {ok, #state{name=Name, vsn=Vsn, elem_id=Id, buffer= <<>>}}.
+    {ok, #state{name=Name, vsn=Vsn, elem_id=Id, buffer= <<>>,
+		sha_context=crypto:sha_init()}}.
 
 handle_call(close, _From, #state{buffer=Buffer} = State) when size(Buffer) > 0 ->
     P = State#state.position,
@@ -63,13 +64,17 @@ handle_info({io_request, From, ReplyAs, Request}, State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
-terminate(normal, #state{name=Name,vsn=Vsn,elem_id=Id} = State) ->
+terminate(normal, State) ->
+    #state{name=Name,vsn=Vsn,elem_id=Id,sha_context=ShaCtx} = State,
+
     % increment the reference count and save the final size
     UpdateElement = fun(Element) when Element#edist_release_elem.elem_id =:= Id ->
 			    case Element#edist_release_elem.total_size of
 				initializing ->
+				    Sha = crypto:sha_final(ShaCtx),
 				    Element#edist_release_elem{
-				      total_size=State#state.position
+				      total_size=State#state.position,
+				      sha=Sha
 				     }
 			    end;
 		       (Element) -> Element
@@ -177,4 +182,5 @@ flush_buffer(Row, Data, State) ->
 		mnesia:write(edist_release_blocks, Record, write)
 	end,
     {atomic, ok} = mnesia:transaction(F),
-    State#state{buffer = <<>>}.
+    Context = crypto:sha_update(State#state.sha_context, Data),
+    State#state{buffer = <<>>, sha_context=Context}.

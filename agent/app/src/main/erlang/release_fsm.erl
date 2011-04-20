@@ -169,7 +169,29 @@ get_prop(Prop, Props) ->
 	V -> V
     end.
 
+compute_sha(File) ->
+    case filelib:is_file(File) of
+	false ->
+	    notpresent;
+	true ->
+	    {ok, Dev} = file:open(File, [read, binary]),
+	    Sha = compute_sha(Dev, crypto:sha_init()),
+	    file:close(Dev),
+	    Sha
+    end.
+
+compute_sha(Dev, Ctx) ->
+    case file:read(Dev, 4096) of
+	{ok, Data} ->
+	    compute_sha(Dev, crypto:sha_update(Ctx, Data));
+	eof ->
+	    crypto:sha_final(Ctx)
+    end.
+
 connect(Session, State) ->
+    ImageFile = filename:join([State#state.paths#paths.base,
+			       "image.cache"]),
+
     {ok, RelProps, SubId} =
 	controller_api:subscribe_release(Session, State#state.rel),
     
@@ -179,10 +201,20 @@ connect(Session, State) ->
 	controller_api:download_release(Session, State#state.rel),
     
     Vsn = get_prop(vsn, ImageProps),
+    ProvidedSha = proplists:get_value(sha, ImageProps),
+    ComputedSha = compute_sha(ImageFile),
 
-    ImageFile = filename:join([State#state.paths#paths.base,
-				"image.cache"]),
-    ok = remote_copy(IDev, ImageFile),
+    if ComputedSha =/= ProvidedSha ->
+	    error_logger:info_msg("Downloading release file~n", []),
+	    {ok, ODev} = file:open(ImageFile, [write, binary]),
+	    {ok, _} = file:copy(IDev, ODev),
+	    file:close(ODev);
+       true ->
+	    error_logger:info_msg("Using cached release file~n", []),
+	    ok
+    end,
+	
+    ok = controller_api:close_stream(IDev),
     
     RelName = relname(State#state.rel, Vsn),
     RuntimeDir = State#state.paths#paths.runtime,
