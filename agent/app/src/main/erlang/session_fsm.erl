@@ -28,7 +28,8 @@ init([Path]) ->
 
 connecting({connected, CPid}, State) ->
     erlang:monitor(process, CPid),
-
+    gproc_dist:sync(),
+    
     {ok, Session} = controller_api:negotiate(CPid),
     {ok, Properties} = controller_api:join(Session),
  

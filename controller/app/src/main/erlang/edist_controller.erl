@@ -265,10 +265,11 @@ handle_call({client, join, Cookie}, _From, State) ->
 		[Client] = mnesia:read(edist_controller_clients,
 				       Cookie,
 				       write),
-		{ok, Facts} = get_facts(Client#client.pid),
+		Pid = Client#client.pid,
+		{ok, Facts} = get_facts(Pid),
 
-		error_logger:info_msg("Client ~p: JOIN with facts ~p~n",
-				      [Cookie, Facts]),
+		error_logger:info_msg("Client ~p(~p): JOIN with facts ~p~n",
+				      [Cookie, Pid, Facts]),
     
 		if
 		    Client#client.joined =:= true ->
@@ -581,7 +582,7 @@ find_matching_releases(Facts, Criterion) ->
 get_facts(Pid) ->
     Q = qlc:q([{Fact, Value} ||
 		  {{p, g, {edist_fact, Fact}}, P, Value} <- gproc:table(props),
-		  P =:= Pid
+		  P == Pid
 	      ]),
     {ok, qlc:e(Q)}.
 				
