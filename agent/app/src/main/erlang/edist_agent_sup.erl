@@ -28,9 +28,6 @@ delete_child(Id) ->
 init([Path]) ->
     {ok,{{one_for_one,1,60},
 	 [
-	  {'edist-agent',
-	   {edist_agent,start_link,[]},
-	   permanent, 2000, worker,[edist_agent]},
 	  {'edist-session',
 	   {session_fsm,start_link,[Path]},
 	   permanent, 2000, worker,[session_fsm]}
