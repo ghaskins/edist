@@ -129,9 +129,11 @@ handle_call({create_release, Name, InitialVsn, Config}, _From, State) ->
 					versions=Versions},
 		mnesia:write(edist_releases, Record, write)
 	end,
-    try mnesia:transaction(F) of
-	{atomic, ok} ->
-	    {reply, ok, State}
+    try
+	case mnesia:transaction(F) of
+	    {atomic, ok} ->
+		{reply, ok, State}
+	end
     catch
 	_:Error ->
 	    {reply, {error, Error}, State}
@@ -154,9 +156,11 @@ handle_call({create_update, Name, NextVsn}, _From, State) ->
 			     Record#edist_release{versions=NewVersions},
 			     write)
 	end,
-    try mnesia:transaction(F) of
-	{atomic, ok} ->
-	    {reply, ok, State}
+    try
+	case mnesia:transaction(F) of
+	    {atomic, ok} ->
+		{reply, ok, State}
+	end
     catch
 	_:Error ->
 	    {reply, {error, Error}, State}
@@ -193,9 +197,11 @@ handle_call({commit_release, Name, Vsn}, _From, State) ->
 		edist_event_bus:notify(edist_releases, {update, Name, Vsn}),
 		ok
 	end,
-    try mnesia:transaction(F) of
-	{atomic, ok} ->
-	    {reply, ok, State}
+    try
+	case mnesia:transaction(F) of
+	    {atomic, ok} ->
+		{reply, ok, State}
+	end
     catch
 	_:Error ->
 	    {reply, {error, Error}, State}
@@ -237,9 +243,11 @@ handle_call({create_group, Name, Criteria, Releases}, _From, State) ->
 			  qlc:e(Q)),
 		ok
 	end,
-    try mnesia:transaction(F) of
-	{atomic, ok} ->
-	    {reply, ok, State}
+    try
+	case mnesia:transaction(F) of
+	    {atomic, ok} ->
+		{reply, ok, State}
+	end
     catch
 	_:Error ->
 	    {reply, {error, Error}, State}
@@ -285,9 +293,11 @@ handle_call({client, join, Cookie}, _From, State) ->
 		edist_event_bus:notify(edist_agents, {join, Cookie, Facts}),
 		{ok, Releases}
 	end,
-    try mnesia:transaction(F) of
-	{atomic, {ok, Releases}} ->
-	    {reply, {ok, [{releases, Releases}]}, State}
+    try
+	case mnesia:transaction(F) of
+	    {atomic, {ok, Releases}} ->
+		{reply, {ok, [{releases, Releases}]}, State}
+	end
     catch
 	_:Error ->
 	    {reply, Error, State}
