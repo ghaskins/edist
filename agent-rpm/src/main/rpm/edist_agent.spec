@@ -47,8 +47,8 @@ install -m 600 %{SOURCE2} $RPM_BUILD_ROOT/%{homedir}/.erlang.cookie
 
 cat > $RPM_BUILD_ROOT/etc/edist_agent.config <<EOF
 [
- {edist_agent, [{rel, "client-release"}, {path, "%{homedir}"}]},
- {agent_link, [{contacts, ["contact@edist-controller"]}]}
+ {edist_agent, [{path, "%{homedir}"}]},
+ {gproc, [{gproc_dist, {[], [{seed, 'controller@linux-mp'}]}}]}
 ].
 EOF
 
@@ -74,7 +74,7 @@ mvn clean
 %pre
 getent group edist >/dev/null || groupadd -r edist
 getent passwd edist >/dev/null || \
-useradd -r -g edist -d %{homedir} -s /sbin/nologin \
+useradd -r -g edist -d %{homedir} -s /bin/sh \
 -c "Erlang Distribution Agent daemon" edist
 exit 0
 
