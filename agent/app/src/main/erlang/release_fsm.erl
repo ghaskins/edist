@@ -208,7 +208,10 @@ connect(Session, State) ->
 	    error_logger:info_msg("Downloading release file~n", []),
 	    {ok, ODev} = file:open(ImageFile, [write, binary]),
 	    {ok, _} = file:copy(IDev, ODev),
-	    file:close(ODev);
+	    file:close(ODev),
+	    
+	    % validate the integrity of the download
+	    ProvidedSha = compute_sha(ImageFile);
        true ->
 	    error_logger:info_msg("Using cached release file~n", []),
 	    ok
