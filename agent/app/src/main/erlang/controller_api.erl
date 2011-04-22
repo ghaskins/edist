@@ -1,6 +1,6 @@
 -module(controller_api).
 -export([api_version/0, negotiate/1, join/1]).
--export([subscribe_release/2, download_release/2, close_stream/1]).
+-export([query_release/2, download_release/2, close_stream/1]).
 
 api_version() -> 1.
 
@@ -16,9 +16,9 @@ join(Session) ->
     gen_server:call(Session#session.pid,
 		    {client, join, Session#session.cookie}).
 
-subscribe_release(Session, Rel) ->
+query_release(Session, Rel) ->
     gen_server:call(Session#session.pid,
-		    {client, subscribe_release, Session#session.cookie, Rel}).
+		    {client, query_release, Session#session.cookie, Rel}).
 
 download_release(Session, Rel) ->
     gen_server:call(Session#session.pid,

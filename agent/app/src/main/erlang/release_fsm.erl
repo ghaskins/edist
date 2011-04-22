@@ -9,7 +9,7 @@
 
 -record(paths, {base, runtime}).
 -record(state, {rel, vsn, paths, config,
-		cname, cnode, session, subid, rpid,
+		cname, cnode, session, rpid,
 		tmoref
 	       }).
 
@@ -67,7 +67,7 @@ binding({hotupdate, Vsn}, State) ->
 	    {ok, binding, State}
     end;
 binding({controller, disconnected}, State) ->
-    {next_state, disconnected_binding, State#state{session=undefined, subid=undefined}}.
+    {next_state, disconnected_binding, State#state{session=undefined}}.
 
 disconnected_binding({release_stopped, _Data}, State) ->
     gen_fsm:cancel_timer(State#state.tmoref),
@@ -80,10 +80,10 @@ disconnected_binding({timeout, _, bind}, State) ->
 	    {next_state, disconnected_binding, start_timer(1000, State)}
     end;
 disconnected_binding({controller, connected, Session}, State) ->
-    {ok, RelProps, SubId} =
-	controller_api:subscribe_release(Session, State#state.rel),
+    {ok, RelProps} =
+	controller_api:query_release(Session, State#state.rel),
     
-    NewState = State#state{session=Session, subid=SubId},
+    NewState = State#state{session=Session},
 
     Vsn = get_prop(vsn, RelProps),
     if
@@ -105,7 +105,7 @@ upgrading_binding({timeout, _, bind}, State) ->
     end;
 upgrading_binding({controller, disconnected}, State) ->
     {next_state, disconnected_binding,
-     State#state{session=undefined, subid=undefined}}.
+     State#state{session=undefined}}.
 
 running({release_stopped, _Data}, State) ->
     {stop, "Subordinate death", State};
@@ -117,17 +117,17 @@ running({hotupdate, Vsn}, State) ->
 	    {next_state, running, State}
     end;
 running({controller, disconnected}, State) ->
-    {next_state, reconnecting, State#state{session=undefined, subid=undefined}}.
+    {next_state, reconnecting, State#state{session=undefined}}.
 
 reconnecting({release_stopped, _Data}, State) ->
     {stop, "Subordinate death", State};
 reconnecting({controller, connected, Session}, State) ->
-    {ok, RelProps, SubId} =
-	controller_api:subscribe_release(Session, State#state.rel),
+    {ok, RelProps} =
+	controller_api:query_release(Session, State#state.rel),
     
     Vsn = get_prop(vsn, RelProps),
 
-    NewState = State#state{session=Session, subid=SubId},
+    NewState = State#state{session=Session},
     if
 	Vsn =/= NewState#state.vsn ->
 	    {next_state, running, upgrade(NewState)};
@@ -192,8 +192,8 @@ connect(Session, State) ->
     ImageFile = filename:join([State#state.paths#paths.base,
 			       "image.cache"]),
 
-    {ok, RelProps, SubId} =
-	controller_api:subscribe_release(Session, State#state.rel),
+    {ok, RelProps} =
+	controller_api:query_release(Session, State#state.rel),
     
     Config = get_prop(config, RelProps),
     
@@ -242,7 +242,7 @@ connect(Session, State) ->
 			      gen_fsm:send_event(S, {release_stopped, Result})
 		      end),
     
-    NewState = State#state{session=Session, subid=SubId,
+    NewState = State#state{session=Session,
 			   vsn=Vsn, config=Config, rpid=RPid},
     case bind(NewState) of
 	true ->

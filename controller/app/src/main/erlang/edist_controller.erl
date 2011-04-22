@@ -303,7 +303,7 @@ handle_call({client, join, Cookie}, _From, State) ->
 	    {reply, Error, State}
     end;
 
-handle_call({client, subscribe_release, _Cookie, Rel}, {ClientPid, _}, State) ->
+handle_call({client, query_release, _Cookie, Rel}, {ClientPid, _}, State) ->
     try
 	F = fun() ->
 		    [#edist_release{config=Config}]
@@ -318,18 +318,7 @@ handle_call({client, subscribe_release, _Cookie, Rel}, {ClientPid, _}, State) ->
 	    end,
 	{atomic, {ok, Props}} = mnesia:transaction(F),
 
-	Module = subscriber,
-	StartFunc = {Module, start_link, [Rel, ClientPid]},
-	
-	{ok, Pid} = edist_controller_sup:start_child({erlang:now(),
-						      StartFunc,
-						      transient,
-						      brutal_kill,
-						      worker,
-						      [Module]
-						     }
-						    ),
-	{reply, {ok, Props, Pid}, State}
+	{reply, {ok, Props}, State}
     catch
 	_:Error ->
 	    {reply, {error, Error}, State}
