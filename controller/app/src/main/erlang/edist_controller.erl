@@ -94,9 +94,16 @@ init([Nodes]) ->
 				      rm_version(Name, Vsn)
 			      end,
 			      lists:flatten(qlc:e(Q))),
-		ok
+
+		qlc:e(qlc:q([ Rel#edist_release.name ||
+				Rel <- mnesia:table(edist_releases)]))
 	end,
-    {atomic, ok} = mnesia:transaction(F),
+    {atomic, Releases} = mnesia:transaction(F),
+
+    lists:foreach(fun(Rel) ->
+			  edist_release_handler:start_link(Rel)
+		  end,
+		  Releases),
 
     true = gproc:reg(?PROCESS_NAME),
 
@@ -132,6 +139,7 @@ handle_call({create_release, Name, InitialVsn, Config}, _From, State) ->
     try
 	case mnesia:transaction(F) of
 	    {atomic, ok} ->
+		edist_release_handler:start_link(Name),
 		{reply, ok, State}
 	end
     catch
@@ -194,12 +202,12 @@ handle_call({commit_release, Name, Vsn}, _From, State) ->
 					       throw({"bad state", Version})
 				       end
 			       end),
-		edist_event_bus:notify(edist_releases, {update, Name, Vsn}),
 		ok
 	end,
     try
 	case mnesia:transaction(F) of
 	    {atomic, ok} ->
+		edist_event_bus:notify({release, Name}, {commit, Vsn}),
 		{reply, ok, State}
 	end
     catch

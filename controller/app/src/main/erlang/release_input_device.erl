@@ -98,7 +98,6 @@ terminate(normal, State) ->
 		ok
 	end,
     {atomic, ok} = mnesia:transaction(F),
-    edist_event_bus:notify(edist_releases, {installed, Name, Vsn}),
     ok;
 terminate(_Reason, #state{name=Name, vsn=Vsn} = _State) ->
     % issue a compensating transaction to remove all traces of this instance
