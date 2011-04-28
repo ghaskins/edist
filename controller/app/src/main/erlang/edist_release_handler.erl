@@ -45,7 +45,7 @@ handle_bus(_, _State) ->
 
 idle({update, Vsn}, State) ->
     Pid = spawn_link(fun() -> update_handler(State#state.release, Vsn) end),
-    {next_state, updating, State#state{updater=Pid, vsn=Vsn}}.
+    {next_state, update, State#state{updater=Pid, vsn=Vsn}}.
 
 update({update, Vsn}, State) ->
     % This means someone tried to update the release while another update
@@ -74,7 +74,7 @@ terminate(_Reason, _StateName, _State) ->
 % this process runs independently from the FSM during an update
 update_handler(Rel, Vsn) ->
     Q = qlc:q([{Name, Pid} ||
-		  {p, g, {edist_release_subscriber, R}, Pid, Name}
+		  {{p, g, {edist_release_subscriber, R}}, Pid, Name}
 		      <- gproc:table(props),
 		  R =:= Rel
 	      ]),
