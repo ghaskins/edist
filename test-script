@@ -4,7 +4,7 @@
 
 Name = "client-release".
 Vsn1 = "1.0".
-Path = "/home/ghaskins/sandbox/git/edist/demo/client"
+Path = "/home/ghaskins/sandbox/git/edist/demo/client".
 ok = edist_controller:create_release(Name, Vsn1, "", []).
 {ok, ODev} = edist_controller:upload_release(Name, Vsn1, matchall, []).
 {ok, IDev} = file:open(filename:join([Path, Name ++ "-" ++ Vsn1 ++ ".tar.gz"]), [read, binary]).
@@ -17,7 +17,7 @@ ok = edist_controller:create_group("default", matchall, [Name], []).
 f(ODev).
 f(IDev).
 
-Vsn2 = "1.1"
+Vsn2 = "1.1".
 ok = edist_controller:create_update(Name, Vsn2, []).
 {ok, ODev} = edist_controller:upload_release(Name, Vsn2, matchall, []).
 {ok, IDev} = file:open(filename:join([Path, Name ++ "-" ++ Vsn2 ++ ".tar.gz"]), [read, binary]).
