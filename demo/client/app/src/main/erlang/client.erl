@@ -67,7 +67,7 @@ handle_cast(_Msg, State) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
 handle_info(timeout, State) ->
-    gen_server:cast({global, server}, {msg, self(), "Hello World"}),
+    gen_server:cast({global, server}, {msg, self(), "Bonjour"}),
     timer:send_after(1000, timeout),
     {noreply, State};
 handle_info(_Info, State) ->
