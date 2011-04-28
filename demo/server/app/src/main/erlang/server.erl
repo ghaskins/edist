@@ -30,6 +30,7 @@ start_link() ->
 %%          {stop, Reason}
 %% --------------------------------------------------------------------
 init([]) ->
+    edist_event_bus:subscribe({release, "client-release"}, []),
     {ok, #state{}}.
 
 %% --------------------------------------------------------------------
@@ -67,7 +68,11 @@ handle_cast(Msg, State) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% --------------------------------------------------------------------
-handle_info(_Info, State) ->
+handle_info({edist_event_bus, Header, {online, Client}}, State) ->
+    net_adm:ping(Client),
+    {noreply, State};
+handle_info(Info, State) ->
+    io:format("Unknown msg: ~p~n", [Info]),
     {noreply, State}.
 
 %% --------------------------------------------------------------------

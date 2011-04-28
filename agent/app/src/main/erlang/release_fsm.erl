@@ -307,6 +307,8 @@ bind(State) ->
 	    	    	
 	    error_logger:info_msg("Binding complete~n", []),
 	    notify({online, State#state.vsn}, State),
+	    edist_event_bus:notify({release, State#state.rel},
+				   {online, State#state.cnode}),
 	    true;
 	_ ->
 	    false
