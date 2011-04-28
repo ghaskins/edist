@@ -4,7 +4,8 @@
 
 handler_test() ->
     Rel = "test",
-    Vsn = "1.0",
+    Vsn1 = "1.1",
+    Vsn2 = "1.2",
     ClientName = "testclient",
 
     application:stop(gproc),
@@ -14,13 +15,22 @@ handler_test() ->
     {ok, Pid} = edist_release_handler:start_link(Rel),
 
     gproc:reg({p, g, {edist_release_subscriber, Rel}}, ClientName),
-    edist_event_bus:notify({release, Rel}, {commit, Vsn}),
+    edist_event_bus:notify({release, Rel}, {commit, Vsn1}),
 
-    wait({update_available, Vsn}),
-    notify({loaded, Vsn}, ClientName),
+    wait({update_available, Vsn1}),
+    notify({loaded, Vsn1}, ClientName),
     
-    wait({reload, Vsn}),
-    notify({online, Vsn}, ClientName),
+    % cause an overlapping update
+    edist_event_bus:notify({release, Rel}, {commit, Vsn2}),
+    
+    wait({reload, Vsn1}),
+    notify({online, Vsn1}, ClientName),
+    
+    wait({update_available, Vsn2}),
+    notify({loaded, Vsn2}, ClientName),
+    
+    wait({reload, Vsn2}),
+    notify({online, Vsn2}, ClientName),
     
     ok.
 

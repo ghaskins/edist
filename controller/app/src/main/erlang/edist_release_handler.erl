@@ -63,7 +63,7 @@ overlapping_update(update_complete, State) ->
 			     update_handler(State#state.release,
 					    State#state.vsn)
 		     end),
-    {next_state, updating, State#state{updater=Pid}}.
+    {next_state, update, State#state{updater=Pid}}.
 
 code_change(_OldVsn, StateName, State, _Extra) ->
     {ok, StateName, State}.
