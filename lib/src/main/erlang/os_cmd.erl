@@ -8,7 +8,7 @@ os_cmd_format(CmdFormat, Params) ->
     os_cmd_format(CmdFormat, Params, false).
 
 os_cmd_format(CmdFormat, Params, Verbose) ->
-    Cmd = format(CmdFormat, Params),    
+    Cmd = format(CmdFormat, Params),
     os_cmd(Cmd, Verbose).
 
 os_cmd(Cmd) ->

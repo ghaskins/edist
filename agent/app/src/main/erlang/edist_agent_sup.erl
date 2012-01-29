@@ -24,7 +24,7 @@ start_child(ChildSpec) ->
 delete_child(Id) ->
     ok = supervisor:terminate_child(?MODULE, Id),
     ok = supervisor:delete_child(?MODULE, Id).
-    
+
 init([Path]) ->
     {ok,{{one_for_one,1,60},
 	 [

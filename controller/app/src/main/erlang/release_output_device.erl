@@ -28,7 +28,7 @@ init({Name, Version, Element, ClientPid}) ->
 handle_call(close, _From, State) ->
     {stop, normal, ok, State};
 handle_call(_Request, _From, State) ->
-    {reply, {error, enotsup}, State}. 
+    {reply, {error, enotsup}, State}.
 
 handle_cast(_Request, State) ->
     {noreply, State}.
@@ -81,13 +81,13 @@ get_chars(Count, State) ->
     #state{name=Name, vsn=Vsn, elem_id=Id, blksize=BlkSize, position=P} = State,
     StartRow = P div BlkSize,
     StartCol = P rem BlkSize,
-    
+
     Blocks = split_request(StartRow, StartCol, Count, BlkSize),
 
     F = fun() ->
 		lists:foldl(fun({Row, Col, N}, Current) ->
 				    Next = process_request(Name, Vsn, Id, Row, Col, N, BlkSize),
-				    <<Current/binary, Next/binary>> 
+				    <<Current/binary, Next/binary>>
 			    end,
 			    <<>>,
 			    Blocks)
@@ -110,7 +110,7 @@ process_request(Name, Vsn, Id, Row, Col, Count, _BlkSize) ->
     Data = find_block(Name, Vsn, Id, Row, Col, Count),
     binary:part(Data, {Col, Count}).
 
-find_block(Name, Vsn, Id, Row, Col, Count) ->   
+find_block(Name, Vsn, Id, Row, Col, Count) ->
     Q = qlc:q([R || R <- mnesia:table(edist_release_blocks),
 		    R#edist_release_block.name =:= Name,
 		    R#edist_release_block.vsn =:= Vsn,
@@ -120,7 +120,7 @@ find_block(Name, Vsn, Id, Row, Col, Count) ->
     [Block] = qlc:e(Q),
     if
 	Col+Count > Block#edist_release_block.size ->
-	    throw({"Block too small", Col+Count, Block}); 
+	    throw({"Block too small", Col+Count, Block});
 	true ->
 	    Block#edist_release_block.data
     end.

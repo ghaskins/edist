@@ -40,13 +40,13 @@ install(App, RootDir, TarFile) ->
 	    ok
     end,
 
-    subst_src_scripts(["erl", "start", "start_erl"], ErtsBinDir, BinDir, 
+    subst_src_scripts(["erl", "start", "start_erl"], ErtsBinDir, BinDir,
                       [{"FINAL_ROOTDIR", RootDir}, {"EMU", "beam"}],
                       [preserve]),
-    create_RELEASES(RootDir, 
+    create_RELEASES(RootDir,
                     filename:join([RootDir, "releases", App])).
 
-%% LOCALS 
+%% LOCALS
 
 get_ertsvsn(RootDir) ->
     StartErlDataFile = filename:join([RootDir, "releases", "start_erl.data"]),
@@ -72,13 +72,13 @@ extract_tar(TarFile, DestDir) ->
 create_RELEASES(DestDir, RelFileName) ->
     release_handler:create_RELEASES(DestDir, RelFileName ++ ".rel").
 
-subst_src_scripts(Scripts, SrcDir, DestDir, Vars, Opts) -> 
+subst_src_scripts(Scripts, SrcDir, DestDir, Vars, Opts) ->
     lists:foreach(fun(Script) ->
-                          subst_src_script(Script, SrcDir, DestDir, 
+                          subst_src_script(Script, SrcDir, DestDir,
                                            Vars, Opts)
                   end, Scripts).
 
-subst_src_script(Script, SrcDir, DestDir, Vars, Opts) -> 
+subst_src_script(Script, SrcDir, DestDir, Vars, Opts) ->
     subst_file(filename:join([SrcDir, Script ++ ".src"]),
                filename:join([DestDir, Script]),
                Vars, Opts).
@@ -159,7 +159,7 @@ remove_all_files(Dir, Files) ->
                           {ok, FileInfo} = file:read_file_info(FilePath),
                           case FileInfo#file_info.type of
                               directory ->
-                                  {ok, DirFiles} = file:list_dir(FilePath), 
+                                  {ok, DirFiles} = file:list_dir(FilePath),
                                   remove_all_files(FilePath, DirFiles),
                                   file:del_dir(FilePath);
                               _ ->

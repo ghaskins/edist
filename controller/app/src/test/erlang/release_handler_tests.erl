@@ -22,21 +22,21 @@ handler_test() ->
 
     % cause an overlapping update
     edist_event_bus:notify({release, Rel}, {commit, Vsn2}),
-    
+
     handle_reload(Vsn1, ClientName),
-    
+
     handle_update(Vsn2, ClientName),
     handle_reload(Vsn2, ClientName),
-    
+
     ok.
 
 handle_update(Vsn, ClientName) ->
     wait({update_available, Vsn}),
     notify({loaded, Vsn}, ClientName).
 
-handle_reload(Vsn, ClientName) ->    
+handle_reload(Vsn, ClientName) ->
     wait({reload, Vsn}),
-    notify({online, Vsn}, ClientName).    
+    notify({online, Vsn}, ClientName).
 
 wait(Event) ->
     receive

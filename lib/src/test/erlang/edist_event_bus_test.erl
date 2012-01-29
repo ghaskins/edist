@@ -24,4 +24,4 @@ badoptions_test() ->
     catch
 	throw:{earg, {bar, baz}} -> ok
     end.
-	    
+
