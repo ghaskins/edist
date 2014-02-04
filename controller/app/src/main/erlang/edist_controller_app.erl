@@ -17,7 +17,7 @@ start(_Type, _StartArgs) ->
 	    catch
 		_:_ -> [node()]
 	    end,
-		
+
     edist_controller_sup:start_link(Nodes).
 
 stop(_State) ->

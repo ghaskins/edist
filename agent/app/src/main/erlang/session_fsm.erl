@@ -22,7 +22,7 @@ init([Path]) ->
     Props = [{{edist_fact, K}, V} || {K, V} <- Facts],
     gproc:mreg(p, g, Props),
     gproc:reg({p, g, edist_client}),
- 
+
     connect(),
     {ok, connecting, #state{path=Path}}.
 
@@ -30,10 +30,10 @@ connecting({connected, CPid}, State) ->
     error_logger:info_msg("Connected to ~p~n", [CPid]),
     erlang:monitor(process, CPid),
     gproc_dist:sync(),
-    
+
     {ok, Session} = controller_api:negotiate(CPid),
     {ok, Properties} = controller_api:join(Session),
- 
+
     RequiredSet = case proplists:get_value(releases, Properties) of
 			   undefined -> [];
 			   V -> sets:from_list(V)
@@ -77,7 +77,7 @@ bcast_event(Event, State) ->
 			  gen_fsm:send_event(Pid, Event)
 		  end,
 		  dict:to_list(State#state.releases)).
-    
+
 update_releases(RequiredSet, State) ->
     CurrentReleases = dict:fetch_keys(State#state.releases),
 
@@ -93,7 +93,7 @@ update_releases(RequiredSet, State) ->
 				 BasePath = filename:join([State#state.path, "releases", Rel]),
 				 StartFunc = {Module, start_link,
 					      [Rel, BasePath, State#state.session]},
-				 
+
 				 {ok, Pid} = edist_agent_sup:start_child({Id,
 									  StartFunc,
 									  transient,

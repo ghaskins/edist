@@ -51,7 +51,7 @@ handle_call(close, _From, #state{buffer=Buffer} = State) when size(Buffer) > 0 -
 handle_call(close, _From, State) ->
     {stop, normal, ok, State};
 handle_call(_Request, _From, State) ->
-    {reply, {error, enotsup}, State}. 
+    {reply, {error, enotsup}, State}.
 
 handle_cast(_Request, State) ->
     {noreply, State}.
@@ -83,10 +83,10 @@ terminate(normal, State) ->
     UpdateVersion = fun(Version) ->
 			    Refs = Version#edist_release_vsn.ref_count,
 			    Elements = Version#edist_release_vsn.elements,
-			    
+
 			    NewElements = [UpdateElement(Element)
 					   || Element <- Elements],
-			    
+
 			    Version#edist_release_vsn{
 			      ref_count=Refs+1,
 			      elements=NewElements
@@ -132,7 +132,7 @@ multi_request([], Result) ->
 put_chars(Chars, #state{position = P} = State) ->
     R = P div ?CHARS_PER_REC,
     C = P rem ?CHARS_PER_REC,
-    
+
     Updates = split_updates(Chars, R, C),
     NewState = lists:foldl(fun(E, Acc) ->
 				   apply_update(E, Acc)
@@ -148,7 +148,7 @@ split_updates(Data, Row, Col) when size(Data) > (?CHARS_PER_REC - Col) ->
     LeftLen = ?CHARS_PER_REC - Col,
     RightLen = size(Data) - LeftLen,
     Left = binary:part(Data, {0, LeftLen}),
-    Right = binary:part(Data, {LeftLen, RightLen}), 
+    Right = binary:part(Data, {LeftLen, RightLen}),
     [ {Row, Col, Left} | split_updates(Right, Row + 1, 0) ];
 split_updates(Data, Row, Col) ->
     [{Row, Col, Data}].
@@ -167,7 +167,7 @@ apply_update({Row, _Col, Data}, State) ->
 
 advance_pos(Data, State) ->
     P = State#state.position + size(Data),
-    State#state{position=P}.    
+    State#state{position=P}.
 
 flush_buffer(Row, Data, State) ->
     Record = #edist_release_block{id=erlang:now(),

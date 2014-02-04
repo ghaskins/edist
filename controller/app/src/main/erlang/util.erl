@@ -36,10 +36,10 @@ pmap(Fun, List) ->
 			   Parent ! {pmap, self(), {error, Error}}
 		   end
 	   end,
-    
+
     Pids = [spawn_link(fun() -> Work(Item) end)
 	    || Item <- List],
-    
+
     lists:map(fun(Pid) ->
 		      receive
 			  {pmap, Pid, {error, Error}} -> throw(Error);

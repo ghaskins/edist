@@ -24,7 +24,7 @@ init([Rel, BasePath, Session]) ->
     case filelib:is_dir(RuntimeDir) of
 	true ->
 	    % make sure we dont have an old runtime hanging around
-	    {ok, Files} = file:list_dir(RuntimeDir), 
+	    {ok, Files} = file:list_dir(RuntimeDir),
 	    target_system:remove_all_files(RuntimeDir, Files);
 	false ->
 	    ok = filelib:ensure_dir(RuntimeDir)
@@ -45,7 +45,7 @@ init([Rel, BasePath, Session]) ->
     notify({subscribe, Rel}, ClientName),
 
     launch(Session, #state{rel=Rel,
-			   paths=#paths{base=BasePath, runtime=RuntimeDir}, 
+			   paths=#paths{base=BasePath, runtime=RuntimeDir},
 			   cname=ClientName, cnode=ClientNode}).
 
 binding({release_stopped, _Data}, State) ->
@@ -83,7 +83,7 @@ disconnected_binding({update_available, _Vsn}, State) ->
 disconnected_binding({controller, connected, Session}, State) ->
     {ok, RelProps} =
 	controller_api:query_release(Session, State#state.rel),
-    
+
     NewState = State#state{session=Session},
 
     Vsn = get_prop(vsn, RelProps),
@@ -128,7 +128,7 @@ running({controller, disconnected}, State) ->
 
 reloading({release_stopped, _Data}, State) ->
     gen_fsm:cancel_timer(State#state.tmoref),
-    {ok, NextStateName, NextState} = launch(State#state.session, State), 
+    {ok, NextStateName, NextState} = launch(State#state.session, State),
     {next_state, NextStateName, NextState};
 reloading({update_available, Vsn}, State) ->
     {next_state, reloading, State};
@@ -142,7 +142,7 @@ reconnecting({release_stopped, _Data}, State) ->
 reconnecting({controller, connected, Session}, State) ->
     {ok, RelProps} =
 	controller_api:query_release(Session, State#state.rel),
-    
+
     Vsn = get_prop(vsn, RelProps),
 
     NewState = State#state{session=Session},
@@ -179,7 +179,7 @@ start_timer(Tmo, State) ->
 
 stop(Node) ->
     error_logger:info_msg("Stopping ~p~n", [Node]),
-    rpc:call(Node, init, stop, []).   
+    rpc:call(Node, init, stop, []).
 
 get_prop(Prop, Props) ->
     case proplists:get_value(Prop, Props) of
@@ -208,7 +208,7 @@ compute_sha(Dev, Ctx) ->
 
 reload(State) ->
     stop(State#state.cnode),
-    {next_state, reloading, start_timer(30000, State)}.  
+    {next_state, reloading, start_timer(30000, State)}.
 
 download_latest(Session, State) ->
     ImageFile = filename:join([State#state.paths#paths.base,
@@ -216,12 +216,12 @@ download_latest(Session, State) ->
 
     {ok, RelProps} =
 	controller_api:query_release(Session, State#state.rel),
-    
+
     Config = get_prop(config, RelProps),
-    
+
     {ok, ImageProps, IDev} =
 	controller_api:download_release(Session, State#state.rel),
-    
+
     Vsn = get_prop(vsn, ImageProps),
     ProvidedSha = proplists:get_value(sha, ImageProps),
     ComputedSha = compute_sha(ImageFile),
@@ -231,15 +231,15 @@ download_latest(Session, State) ->
 		{ok, ODev} = file:open(ImageFile, [write, binary]),
 		{ok, _} = file:copy(IDev, ODev),
 		file:close(ODev),
-		
+
 		% validate the integrity of the download
 		ProvidedSha = compute_sha(ImageFile),
-		
+
 		downloaded;
 	   true ->
 		cached
 	end,
-    
+
     ok = controller_api:close_stream(IDev),
 
     notify({loaded, Vsn}, State),
@@ -258,16 +258,16 @@ launch(Session, State) ->
     RelName = relname(State#state.rel, Vsn),
     RuntimeDir = State#state.paths#paths.runtime,
     ok = target_system:install(RelName, RuntimeDir, ImageFile),
-    
+
     BootFile = filename:join([RuntimeDir, "releases", Vsn, "start"]),
-    Cmd = filename:join([RuntimeDir, "bin", "erl"]) ++ 
+    Cmd = filename:join([RuntimeDir, "bin", "erl"]) ++
 	" -boot " ++ BootFile ++
 	" -noinput" ++
 	" -sname " ++ State#state.cname ++
 	" " ++ Config,
-    
+
     error_logger:info_msg("Launching ~s~n", [Cmd]),
-    
+
     S = self(),
     RPid = spawn_link(fun() ->
 			      Result = try os_cmd:os_cmd(Cmd)
@@ -277,7 +277,7 @@ launch(Session, State) ->
 				       end,
 			      gen_fsm:send_event(S, {release_stopped, Result})
 		      end),
-    
+
     NewState = State#state{session=Session,
 			   vsn=Vsn, config=Config, rpid=RPid},
     case bind(NewState) of
@@ -288,7 +288,7 @@ launch(Session, State) ->
     end.
 
 bind(State) ->
-    error_logger:info_msg("Binding to ~p....~n", [State#state.cnode]), 
+    error_logger:info_msg("Binding to ~p....~n", [State#state.cnode]),
     case net_adm:ping(State#state.cnode) of
 	pong ->
 	    S = self(),
@@ -304,7 +304,7 @@ bind(State) ->
 		      init:stop()
 	      end
 	     ),
-	    	    	
+
 	    error_logger:info_msg("Binding complete~n", []),
 	    notify({online, State#state.vsn}, State),
 	    edist_event_bus:notify({release, State#state.rel},
@@ -321,7 +321,7 @@ os_cmd(Cmd) ->
     [Tmp | _ ] = string:tokens(os_cmd:os_cmd(Cmd), "\n"),
     Tmp.
 
-tempfile() -> 
+tempfile() ->
     os_cmd("mktemp").
 
 notify(Event, State) when is_record(State, state) ->

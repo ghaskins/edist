@@ -3,7 +3,7 @@
 
 get_facts() ->
     Facts = string:tokens(os_cmd:os_cmd("facter"), "\n"),
-    
+
     F = fun(Fact) ->
 		Pos = string:str(Fact, " => "),
 		Key = string:substr(Fact, 1, Pos-1),
@@ -11,4 +11,4 @@ get_facts() ->
 		{Key, Value}
     end,
     [ F(Fact) || Fact <- Facts].
-    
+

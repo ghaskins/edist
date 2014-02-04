@@ -91,7 +91,7 @@ update_handler(Rel, Vsn) ->
 		  end,
 		  Subs),
 
-    % block until all clients have either loaded the new release, or 
+    % block until all clients have either loaded the new release, or
     % have somehow died/disappeared
     Status = lists:map(fun({Name, Pid}) ->
 			       R = collect_response(Name, Pid, {loaded, Vsn}),
@@ -126,5 +126,5 @@ collect_response(Name, Pid, Event) ->
 	60000 ->
 	    timeout
     end.
-    
+
 

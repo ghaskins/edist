@@ -25,7 +25,7 @@ notify(EventType, Msg, RawOptions) ->
     Options = parse_options(RawOptions),
     Scope = Options#options.scope,
 
-    Q = qlc:q([{P, S} 
+    Q = qlc:q([{P, S}
 	       || {{p, '_', {?MODULE, E}}, P, S} <- gproc:table({Scope, props}),
 		  E =:= EventType orelse E =:= all]),
     lists:foreach(fun({P, S}) ->

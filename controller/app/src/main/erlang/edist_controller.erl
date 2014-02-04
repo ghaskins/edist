@@ -72,11 +72,11 @@ init([Nodes]) ->
 
     ok = open_table(edist_releases, ?RECORD(edist_release), Nodes),
     ok = open_disc_table(edist_release_blocks, ?RECORD(edist_release_block), Nodes),
-    
+
     ok = open_table(edist_groups, ?RECORD(edist_group), Nodes),
     mnesia:delete_table(edist_controller_clients),
     ok = open_ram_table(edist_controller_clients, ?RECORD(client), [node()]),
-  
+
     % issue a compensating transaction to remove any dangling releases
     F = fun() ->
 		CheckRel =
@@ -84,7 +84,7 @@ init([Nodes]) ->
 			    Dict = dict:filter(fun(_, Vsn) ->
 						       active_vsn(Vsn) =:= false
 					       end,
-					       Rel#edist_release.versions), 
+					       Rel#edist_release.versions),
 			    [{Rel#edist_release.name, Vsn#edist_release_vsn.vsn} ||
 				{_, Vsn} <- dict:to_list(Dict)]
 		    end,
@@ -110,13 +110,13 @@ init([Nodes]) ->
     {ok, #state{}}.
 
 open_ram_table(Table, RecordInfo, Nodes) ->
-    open_table(Table, ram_copies, RecordInfo, Nodes). 
+    open_table(Table, ram_copies, RecordInfo, Nodes).
 
 open_disc_table(Table, RecordInfo, Nodes) ->
-    open_table(Table, disc_only_copies, RecordInfo, Nodes). 
+    open_table(Table, disc_only_copies, RecordInfo, Nodes).
 
 open_table(Table, RecordInfo, Nodes) ->
-    open_table(Table, disc_copies, RecordInfo, Nodes). 
+    open_table(Table, disc_copies, RecordInfo, Nodes).
 
 open_table(Table, Type, {Record, Info}, Nodes) ->
     util:open_table(Table,
@@ -223,14 +223,14 @@ handle_call({create_group, Name, Criteria, Releases}, _From, State) ->
 				     criteria=Criteria,
 				     releases=Releases},
 		mnesia:write(edist_groups, Group, write),
-		
+
 		lists:foreach(fun(Rel) ->
 				      [_] = mnesia:read(edist_releases, Rel, read)
 			      end,
 			      Releases),
 
 		Criterion = get_criterion(),
-		Q = qlc:q([Pid || 
+		Q = qlc:q([Pid ||
 			      {{p, g, edist_client}, Pid, '_'}
 				  <- gproc:table(props)]),
 
@@ -267,7 +267,7 @@ handle_call({client, negotiate, RemoteApiVsn, Args}, {Pid,_Tag}, State) ->
 
     error_logger:info_msg("Client ~p(~p): NEGOTIATE with Api: ~p Options: ~p~n",
 			   [Cookie, Pid, RemoteApiVsn, Args]),
-    
+
     F = fun() ->
 		Ref = erlang:monitor(process, Pid),
 		Client = #client{cookie=Cookie, pid=Pid, ref=Ref},
@@ -286,7 +286,7 @@ handle_call({client, join, Cookie}, _From, State) ->
 
 		error_logger:info_msg("Client ~p(~p): JOIN with facts ~p~n",
 				      [Cookie, Pid, Facts]),
-    
+
 		if
 		    Client#client.joined =:= true ->
 			throw("Already joined");
@@ -364,7 +364,7 @@ handle_call({client, download_release, Cookie, Rel}, {ClientPid, _Tag}, State) -
 	    Element ->
 		StartFunc = {release_output_device, start_link,
 			     [Rel, Version, Element, ClientPid]},
-		
+
 		{ok, Dev} = edist_controller_sup:start_child({erlang:now(),
 							      StartFunc,
 							      transient,
@@ -418,7 +418,7 @@ handle_cast(_Msg, State) ->
 %% --------------------------------------------------------------------
 handle_info({'DOWN', Ref, process, Pid, _Info}, State) ->
     error_logger:info_msg("Client ~p: DOWN~n", [Pid]),
-    
+
     Tab = edist_controller_clients,
     F = fun() ->
 		DelClient =
@@ -470,7 +470,7 @@ find_latest_active(Name) ->
 		     active_vsn(Version)
 	     end,
     find_latest(Name, Filter).
-		    
+
 find_latest(Name, Filter) ->
     [Record] = mnesia:read(edist_releases, Name, read),
 
@@ -486,7 +486,7 @@ find_latest(Name, Filter) ->
 			   _ ->
 			       lists:filter(Filter, Versions)
 		       end,
-    
+
     case lists:foldl(fun(Version, undefined) ->
 			    Version;
 		       (Version, AccIn)
@@ -510,14 +510,14 @@ inc_version(Name, Vsn) ->
 					ref_count=Refs+1
 				       }
 			      end).
-   
+
 dec_version(Name, Vsn) ->
     update_version(Name, Vsn, fun(Version) ->
 				      Refs = Version#edist_release_vsn.ref_count,
 				      Version#edist_release_vsn{
 					ref_count=Refs-1
 				       }
-			      end).  
+			      end).
 
 update_version(Name, Vsn, Fun) ->
     [Record] = mnesia:read(edist_releases, Name, write),
@@ -540,7 +540,7 @@ rm_version(Name, Vsn) ->
 	    NewRecord = Record#edist_release{versions=NewVersions},
 	    ok = mnesia:write(edist_releases, NewRecord, write)
     end,
-    
+
     % we remove all elements under vsn implictly
     Q = qlc:q([mnesia:delete_object(edist_release_blocks, R, write)
 	       || R <- mnesia:table(edist_release_blocks),
@@ -554,13 +554,13 @@ active_vsn(Vsn) ->
     Vsn#edist_release_vsn.state =:= active.
 
 exec_criteria(Facts, Criteria) ->
-    % FIXME: We are JIT'ing the criteria, might want to 
+    % FIXME: We are JIT'ing the criteria, might want to
     % precompile/cache somehow
     {ok, Fun} = util:compile_native(Criteria),
     Fun(Facts).
 
 process_criterion(Facts, Criterion) ->
-    % perform a parallel search for any elements with matching criteria   
+    % perform a parallel search for any elements with matching criteria
     util:pmap(fun({Criteria, Cookie}) ->
 		      case exec_criteria(Facts, Criteria) of
 			  match -> {match, Cookie};
@@ -596,4 +596,4 @@ get_facts(Pid) ->
 		  P =:= Pid
 	      ]),
     {ok, qlc:e(Q)}.
-				
+

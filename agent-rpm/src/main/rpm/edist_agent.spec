@@ -19,9 +19,9 @@ BuildRoot: %{_tmppath}/%{name}-%{version}-root
 
 Requires: erlang facter sudo
 
-%if 0%{?suse_version} > 1110  
-Requires(pre):    pwdutils  
-%else  
+%if 0%{?suse_version} > 1110
+Requires(pre):    pwdutils
+%else
 Requires(pre):    shadow-utils
 %endif
 
@@ -38,8 +38,8 @@ Authors
 
 %install
 mvn install -DoutputDirectory=$RPM_BUILD_ROOT%{rootdir}
-install -d -m 755 $RPM_BUILD_ROOT/%{logdir} 
-install -d -m 755 $RPM_BUILD_ROOT/%{homedir} 
+install -d -m 755 $RPM_BUILD_ROOT/%{logdir}
+install -d -m 755 $RPM_BUILD_ROOT/%{homedir}
 mkdir -p $RPM_BUILD_ROOT/etc
 mkdir -p $RPM_BUILD_ROOT/%{_sbindir}
 
@@ -52,7 +52,7 @@ cat > $RPM_BUILD_ROOT/etc/edist_agent.config <<EOF
 ].
 EOF
 
-cat > $RPM_BUILD_ROOT/%{_sbindir}/%{name} <<EOF 
+cat > $RPM_BUILD_ROOT/%{_sbindir}/%{name} <<EOF
 #!/bin/bash
 
 export ERL_LIBS=%{rootdir}/lib

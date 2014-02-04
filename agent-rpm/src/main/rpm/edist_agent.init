@@ -88,7 +88,7 @@ case "$1" in
 	# 3 - service not running (unused)
 	# 4 - service status unknown :-(
 	# 5--199 reserved (5--99 LSB, 100--149 distro, 150--199 appl.)
-	
+
 	# NOTE: checkproc returns LSB compliant status values.
 	/sbin/checkproc -p $PIDFILE $BEAMEXE
 	# NOTE: rc_status knows that we called this init script with
